@@ -105,7 +105,7 @@ const PLAY_AFTER = /\s(?:et|and|y|e|и)\s+(?:mets|met|joue|play|put on|pon|toca|
 // "lance la musique de Daft Punk", "start the song X": an app verb, but music right after it
 const MUSIC_START = /^(?:capri,?\s+)?(?:lance|démarre|demarre|start|launch|écoute|ecoute|pon|toca)(?:[- ]moi|[- ]me)?\s+(?:la |le |une? |the |some )?(?:musique|music|chanson|son|morceau|song|track|canci[óo]n|m[úu]sica|песню|музыку)\s+(.{2,100})$/i;
 // "mets ce que tu veux", "play whatever you want": she picks (her tag)
-const HER_PICK = /tu veux|ton choix|surprends|you want|whatever|your choice|surprise me|quieras|tu elecci[óo]n|quiser|sua escolha|хочешь|на твой выбор/i;
+const HER_PICK = /tu veux|ton choix|surprends|you want|whatever|your choice|surprise me|quieras|tu elecci[óo]n|quiser|sua escolha|хочешь|на твой выбор|на свой вкус|на твой вкус|свой вкус|твой вкус|на свой выбор|свой выбор|твой выбор|выбери сама|твой любимый|твоя любимая|свой любимый|что ты слушаешь|что ты любишь|по вкусу/i;
 // what's left when it doesn't say which song ("mets de la musique", "play something")
 const VAGUE_SONG = /^(?:(?:de\s+la|du|des|la|le|les|une?|some|a|the|un|algo\s+de|alguma|um|uma|что-нибудь)\s+)?(?:musique|music|son|sons|chanson|morceau|truc|quelque\s+chose|something|song|tunes?|m[úu]sica|canci[óo]n|algo|coisa|музыку|песню)?\s*[.!?]*$/iu;
 // "trouve mon CV", "où est le pdf du contrat", "find my report", "найди файл…": her search verbs, and
@@ -212,7 +212,7 @@ export class Chat {
     this.jealousy = null;  // and how she takes your other AIs
     this.onMessage = null; // () => void: you said something to her
     this.waitingWhen = null; // a reminder you asked for without saying when: { text, until }
-    this.musicPlayer = 'spotify';
+    this.musicPlayer = 'yandex';
     this.dynamicPowers = [];
     this.refreshPowers();
     host.onChatDelta(({ id, text }) => this.onDelta(id, text));
@@ -229,7 +229,7 @@ export class Chat {
   }
 
   playerName(player = null) {
-    const key = player || this.musicPlayer || 'spotify';
+    const key = player || this.musicPlayer || 'yandex';
     return this.t.playerNames?.[key] || key;
   }
 
@@ -510,17 +510,32 @@ export class Chat {
     if (RADIO_ASK.test(text.trim())) return { kind: 'music', song: 'Моя волна (Радио)', player: 'yandex' };
     const playerAsk = matchPlayerAsk(text);
     if (playerAsk) return { kind: 'music', song: playerAsk.song, player: playerAsk.player };
+    if (/плейлист|подборк|playlist/i.test(text) && (/музык|трек|песн|сгенерир|подбер|собер|сделай|включ|постав|вруб/i.test(text))) {
+      return { kind: 'music', song: text, player: 'yandex' };
+    }
+    if (HER_PICK.test(text) && (/музык|песн|трек|слуша|play|вруби|поставь|включи|сыграй/i.test(text))) {
+      return { kind: 'music', song: 'на свой вкус', player: 'yandex' };
+    }
     const app = this.askedToClose(text);
     if (app) return { kind: 'close', name: app };
     if (GAME_ASK.test(text) && count <= 8) return { kind: 'open', text };
     const start = MUSIC_START.exec(text.trim())?.[1];
-    if (start && !HER_PICK.test(start)) return { kind: 'play', song: songOf(start.replace(/[\s.!?]+$/, '')) };
+    if (start) {
+      if (HER_PICK.test(start)) return { kind: 'music', song: 'на свой вкус', player: 'yandex' };
+      return { kind: 'play', song: songOf(start.replace(/[\s.!?]+$/, '')) };
+    }
     const both = PLAY_AFTER.exec(text.trim());
     const after = both?.[1];
     // "ouvre discord et lance spotify": the first half too
-    if (after && !VAGUE_SONG.test(after) && !HER_PICK.test(after)) return { kind: 'play', song: songOf(after.replace(/[\s.!?]+$/, '')), before: text.trim().slice(0, both.index) };
+    if (after) {
+      if (HER_PICK.test(after)) return { kind: 'music', song: 'на свой вкус', player: 'yandex', before: text.trim().slice(0, both.index) };
+      if (!VAGUE_SONG.test(after)) return { kind: 'play', song: songOf(after.replace(/[\s.!?]+$/, '')), before: text.trim().slice(0, both.index) };
+    }
     const play = PLAY_ASK.exec(text.trim())?.[1];
-    if (play && !VAGUE_SONG.test(play) && !HER_PICK.test(play)) return { kind: 'play', song: songOf(play.replace(/[\s.!?]+$/, '')) };
+    if (play) {
+      if (HER_PICK.test(play)) return { kind: 'music', song: 'на свой вкус', player: 'yandex' };
+      if (!VAGUE_SONG.test(play)) return { kind: 'play', song: songOf(play.replace(/[\s.!?]+$/, '')) };
+    }
     if (OPEN_ASK.test(text) && count <= 14) return { kind: 'open', text };
     return null;
   }
@@ -747,6 +762,7 @@ export class Chat {
     this.zap();
     const res = await this.host.music(song, target);
     if (!res) return null;
+    if (res.text) return { line: res.text, face: 'laugh' };
     const songName = (typeof res === 'object' && res.title) ? (res.artist && res.artist !== 'Яндекс Музыка' && res.artist !== 'Радиостанция' ? `${res.title} — ${res.artist}` : res.title) : song;
     return { line: fmt(this.t.music, { song: songName, player: this.playerName(target) }), face: 'laugh' };
   }

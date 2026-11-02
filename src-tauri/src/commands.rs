@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::mem::size_of;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -372,6 +372,137 @@ pub fn launch_yandex_music(deep_target: &str, web_target: &str) {
     }
 }
 
+pub struct CapriPick {
+    pub title: &'static str,
+    pub artist: &'static str,
+    pub track_id: u64,
+    pub comment: &'static str,
+}
+
+pub const CAPRI_FAVORITES: &[CapriPick] = &[
+    CapriPick {
+        title: "I Really Want to Stay at Your House",
+        artist: "Rosa Walton, Hallie Coggins",
+        track_id: 73700046,
+        comment: "Классика Найт-Сити, от которой мурашки по биочипу... Врубаю «I Really Want to Stay at Your House»! 🌆💔",
+    },
+    CapriPick {
+        title: "Never Fade Away",
+        artist: "SAMURAI",
+        track_id: 56168579,
+        comment: "Джонни Сильверхэнд завещал жечь до конца! Врубаю гимн бунтарей — «Never Fade Away» от SAMURAI! 🎸🔥",
+    },
+    CapriPick {
+        title: "Chippin' In",
+        artist: "SAMURAI",
+        track_id: 56168578,
+        comment: "Пора прокачать хромированные связки! Лови «Chippin' In» — легендарный рифф SAMURAI! ⚡🎸",
+    },
+    CapriPick {
+        title: "MAJOR CRIMES",
+        artist: "HEALTH",
+        track_id: 73700054,
+        comment: "Тёмный неоновый драйв прямо из глубин Уотсона. Врубаю «MAJOR CRIMES» от HEALTH! 🩸🌃",
+    },
+    CapriPick {
+        title: "The Rebel Path",
+        artist: "Marcin Przybyłowicz, P.T. Adamczyk",
+        track_id: 73700030,
+        comment: "Чистый адреналин и свист пуль! Запускаю «The Rebel Path» — идём на штурм Арасаки! ⚔️🔥",
+    },
+    CapriPick {
+        title: "Who's Ready for Tomorrow",
+        artist: "Rat Boy, IBDY",
+        track_id: 73700041,
+        comment: "Утро в Найт-Сити начинается с правильного бита! Врубаю «Who's Ready for Tomorrow»! 🌅🚀",
+    },
+    CapriPick {
+        title: "Future Club",
+        artist: "Perturbator",
+        track_id: 18197793,
+        comment: "Мрачный ретро-синт для ночных рейдов по Сети. Ставлю «Future Club» от Perturbator! 🕹️⚡",
+    },
+    CapriPick {
+        title: "Turbo Killer",
+        artist: "Carpenter Brut",
+        track_id: 24345229,
+        comment: "Педаль в пол, choom! Заряжаю безумный дарксинт — «Turbo Killer» от Carpenter Brut! 🏎️💥",
+    },
+    CapriPick {
+        title: "Nightcall",
+        artist: "Kavinsky",
+        track_id: 228941,
+        comment: "Ночные огни мегаполиса, пустой хайвей и холодный синт. Ставлю легендарный «Nightcall» от Kavinsky! 🌙🚗",
+    },
+    CapriPick {
+        title: "GR4VES",
+        artist: "Konrad OldMoney, Cerbeus",
+        track_id: 73700044,
+        comment: "Грязный уличный кибер-бит из подворотен Пасифики. Врубаю «GR4VES»! ⚡🔊",
+    },
+];
+
+pub struct CapriPlaylist {
+    pub title: &'static str,
+    pub genre: &'static str,
+    pub desc: &'static str,
+    pub seed_track_id: u64,
+    pub tracks: &'static [&'static str],
+}
+
+pub const CAPRI_PLAYLISTS: &[CapriPlaylist] = &[
+    CapriPlaylist {
+        title: "Кибер-Фокус: Хакерский поток",
+        genre: "Synthwave & Dark Electronic",
+        desc: "Погружение в код и взлом систем без лишнего шума",
+        seed_track_id: 18197793,
+        tracks: &[
+            "Perturbator — Future Club",
+            "Carpenter Brut — Roller Mobster",
+            "Lorn — Acid Rain",
+            "Dance With the Dead — Horizon",
+        ],
+    },
+    CapriPlaylist {
+        title: "Овердрайв: Хромированный драйв",
+        genre: "Darksynth & Industrial Rock",
+        desc: "Максимальный пульс и работа на пределе мощности",
+        seed_track_id: 24345229,
+        tracks: &[
+            "Carpenter Brut — Turbo Killer",
+            "SAMURAI — Chippin' In",
+            "Mick Gordon — The Only Thing They Fear Is You",
+            "The Prodigy — Voodoo People (Pendulum Remix)",
+        ],
+    },
+    CapriPlaylist {
+        title: "Неоновый дождь: Ночной Найт-Сити",
+        genre: "Cyberpunk Lo-Fi & Retrowave",
+        desc: "Ночной город, пустые хайвеи и созерцание огней",
+        seed_track_id: 73700046,
+        tracks: &[
+            "Rosa Walton — I Really Want to Stay at Your House",
+            "Kavinsky — Nightcall",
+            "Gunship — Tech Noir",
+            "HEALTH — MAJOR CRIMES",
+        ],
+    },
+    CapriPlaylist {
+        title: "Уличный заезд: Cyber Phonk & Drift",
+        genre: "Drift Phonk & Cyber Bass",
+        desc: "Жжём резину на улицах Найт-Сити под тяжёлый 808-й бас",
+        seed_track_id: 73700044,
+        tracks: &[
+            "Konrad OldMoney — GR4VES",
+            "Kordhell — Murder In My Mind",
+            "DVRST — Close Eyes",
+            "Rat Boy — Who's Ready for Tomorrow",
+        ],
+    },
+];
+
+static TASTE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
 pub fn play_yandex_music(query: &str) -> Value {
     let clean = sanitize_music_query(query);
 
@@ -384,26 +515,45 @@ pub fn play_yandex_music(query: &str) -> Value {
         }
     }
 
-    let q_lower = clean.to_lowercase();
-    let is_radio = q_lower.is_empty()
-        || q_lower.contains("радио")
-        || q_lower.contains("волн")
-        || q_lower.contains("vibe")
-        || q_lower == "музыку"
-        || q_lower == "музыка"
-        || q_lower == "что-нибудь";
+    let full_lower = format!("{} {}", query.to_lowercase(), clean.to_lowercase());
 
-    if is_radio {
-        launch_yandex_music("yandexmusic://home", "https://music.yandex.ru/home");
-        std::thread::spawn(|| {
-            std::thread::sleep(std::time::Duration::from_millis(2200));
-            media("play".to_string());
-        });
+    // 1. Check if user asked to generate a playlist or themed music selection
+    let is_playlist_req = full_lower.contains("плейлист")
+        || full_lower.contains("подборк")
+        || full_lower.contains("playlist")
+        || ((full_lower.contains("сгенерир") || full_lower.contains("подбер") || full_lower.contains("собер") || full_lower.contains("сделай"))
+            && (full_lower.contains("музык") || full_lower.contains("трек") || full_lower.contains("песн")));
+
+    if is_playlist_req {
+        let pl_idx = if full_lower.contains("код") || full_lower.contains("работ") || full_lower.contains("программ") || full_lower.contains("фокус") || full_lower.contains("концентр") {
+            0
+        } else if full_lower.contains("трен") || full_lower.contains("зал") || full_lower.contains("качал") || full_lower.contains("спорт") || full_lower.contains("бег") || full_lower.contains("энерг") || full_lower.contains("бодр") || full_lower.contains("драйв") || full_lower.contains("кач") {
+            1
+        } else if full_lower.contains("чилл") || full_lower.contains("релакс") || full_lower.contains("расслаб") || full_lower.contains("ноч") || full_lower.contains("сон") || full_lower.contains("отдых") || full_lower.contains("спокой") {
+            2
+        } else if full_lower.contains("фонк") || full_lower.contains("phonk") || full_lower.contains("дрифт") || full_lower.contains("бас") || full_lower.contains("тусов") || full_lower.contains("вечерин") {
+            3
+        } else {
+            TASTE_COUNTER.fetch_add(1, Ordering::Relaxed) % CAPRI_PLAYLISTS.len()
+        };
+
+        let pl = &CAPRI_PLAYLISTS[pl_idx];
+        let target_deep = format!("yandexmusic://play-vibe?seeds=track:{}&openPlayer=true", pl.seed_track_id);
+        let target_web = format!("https://music.yandex.ru/play-vibe?seeds=track:{}&openPlayer=true", pl.seed_track_id);
+        launch_yandex_music(&target_deep, &target_web);
+
+        let tracks_str = pl.tracks.iter().map(|t| format!("├ 🎵 {}", t)).collect::<Vec<_>>().join("\n");
+        let reply = format!(
+            "Сгенерировала плейлист «{}»! 🎧⚡\n├ 🌌 Стиль: {}\n├ 🎯 Назначение: {}\n{}\n└ 🚀 Включила стартовый трек и запустила поток в Яндекс Музыке!",
+            pl.title, pl.genre, pl.desc, tracks_str
+        );
+
         let res = json!({
             "ok": true,
             "player": "Яндекс Музыка",
-            "title": "Моя волна (Радио)",
-            "artist": "Радиостанция"
+            "title": pl.title,
+            "artist": pl.genre,
+            "text": reply
         });
         if let Ok(mut guard) = LAST_PLAY.lock() {
             *guard = Some((clean, Instant::now(), res.clone()));
@@ -411,6 +561,77 @@ pub fn play_yandex_music(query: &str) -> Value {
         return res;
     }
 
+    // 2. Check if user asked to play music based on Capri's own taste
+    let is_taste_req = full_lower.contains("на свой вкус")
+        || full_lower.contains("на твой вкус")
+        || full_lower.contains("свой вкус")
+        || full_lower.contains("твой вкус")
+        || full_lower.contains("на твой выбор")
+        || full_lower.contains("на свой выбор")
+        || full_lower.contains("свой выбор")
+        || full_lower.contains("твой выбор")
+        || full_lower.contains("что ты слушаешь")
+        || full_lower.contains("что ты любишь")
+        || full_lower.contains("твой любимый")
+        || full_lower.contains("твоя любимая")
+        || full_lower.contains("свой любимый")
+        || full_lower.contains("выбери сама")
+        || full_lower.contains("по вкусу")
+        || full_lower.contains("что хочешь");
+
+    if is_taste_req {
+        let idx = TASTE_COUNTER.fetch_add(1, Ordering::Relaxed) % CAPRI_FAVORITES.len();
+        let pick = &CAPRI_FAVORITES[idx];
+        let target_deep = format!("yandexmusic://play-vibe?seeds=track:{}&openPlayer=true", pick.track_id);
+        let target_web = format!("https://music.yandex.ru/play-vibe?seeds=track:{}&openPlayer=true", pick.track_id);
+        launch_yandex_music(&target_deep, &target_web);
+
+        let reply = format!(
+            "{}\n├ 🎵 Трек: «{}»\n└ 👤 Исполнитель: {} 🎧⚡",
+            pick.comment, pick.title, pick.artist
+        );
+        let res = json!({
+            "ok": true,
+            "player": "Яндекс Музыка",
+            "title": pick.title,
+            "artist": pick.artist,
+            "text": reply
+        });
+        if let Ok(mut guard) = LAST_PLAY.lock() {
+            *guard = Some((clean, Instant::now(), res.clone()));
+        }
+        return res;
+    }
+
+    // 3. Radio / "Моя волна" check
+    let is_radio = clean.is_empty()
+        || clean == "радио"
+        || clean == "радиостанция"
+        || clean == "моя волна"
+        || clean == "волну"
+        || clean == "волна"
+        || clean == "vibe"
+        || clean == "музыку"
+        || clean == "музыка"
+        || clean == "что-нибудь";
+
+    if is_radio {
+        launch_yandex_music("yandexmusic://play-vibe", "https://music.yandex.ru/home?deeplink=play-vibe");
+        let reply = "Запустила «Мою волну» в Яндекс Музыке! Поток уже играет, choom! 📻⚡".to_string();
+        let res = json!({
+            "ok": true,
+            "player": "Яндекс Музыка",
+            "title": "Моя волна (Радио)",
+            "artist": "Яндекс Музыка",
+            "text": reply
+        });
+        if let Ok(mut guard) = LAST_PLAY.lock() {
+            *guard = Some((clean, Instant::now(), res.clone()));
+        }
+        return res;
+    }
+
+    // 4. Specific track or artist search via Yandex Music API
     let encoded = url_encode(&clean);
     let api_url = format!("https://api.music.yandex.net/search?text={}&type=all&page=0", encoded);
 
@@ -418,6 +639,7 @@ pub fn play_yandex_music(query: &str) -> Value {
     let mut found_artists = "Яндекс Музыка".to_string();
     let mut target_deep = format!("yandexmusic://search?text={}", encoded);
     let mut target_web = format!("https://music.yandex.ru/search?text={}", encoded);
+    let mut reply = format!("Включила «{}» в Яндекс Музыке! Приятного прослушивания, choom! 🎵⚡", clean);
 
     if let Ok(res) = ureq::get(&api_url)
         .set("User-Agent", "YandexMusic/2024")
@@ -427,48 +649,66 @@ pub fn play_yandex_music(query: &str) -> Value {
         if let Ok(val) = res.into_json::<Value>() {
             let result_obj = val.get("result");
 
-            let track_node = result_obj
-                .and_then(|r| r.get("best"))
-                .and_then(|b| {
-                    if b.get("type").and_then(|t| t.as_str()) == Some("track") {
-                        b.get("result")
-                    } else {
-                        None
-                    }
-                })
-                .or_else(|| {
-                    result_obj
-                        .and_then(|r| r.get("tracks"))
-                        .and_then(|t| t.get("results"))
-                        .and_then(|arr| arr.as_array())
-                        .and_then(|a| a.first())
-                });
+            let best_obj = result_obj.and_then(|r| r.get("best"));
+            let best_type = best_obj.and_then(|b| b.get("type")).and_then(|t| t.as_str());
 
-            if let Some(t) = track_node {
-                if let Some(t_title) = t.get("title").and_then(|s| s.as_str()) {
-                    found_title = t_title.to_string();
-                }
-                if let Some(arts) = t.get("artists").and_then(|a| a.as_array()) {
-                    let art_names: Vec<&str> = arts.iter().filter_map(|a| a.get("name").and_then(|n| n.as_str())).collect();
-                    if !art_names.is_empty() {
-                        found_artists = art_names.join(", ");
+            if best_type == Some("artist") {
+                if let Some(art) = best_obj.and_then(|b| b.get("result")) {
+                    if let Some(name) = art.get("name").and_then(|n| n.as_str()) {
+                        found_artists = name.to_string();
+                        found_title = format!("Волна артиста {}", name);
+                    }
+                    if let Some(aid) = art.get("id").and_then(|i| i.as_u64()) {
+                        target_deep = format!("yandexmusic://play-vibe?seeds=artist:{}&openPlayer=true", aid);
+                        target_web = format!("https://music.yandex.ru/play-vibe?seeds=artist:{}&openPlayer=true", aid);
+                        reply = format!("Запустила волну артиста «{}» в Яндекс Музыке! Погружаемся в дискографию, choom! 🎸⚡", found_artists);
                     }
                 }
-                let track_id = t.get("id").and_then(|i| i.as_u64()).or_else(|| {
-                    t.get("realId").and_then(|r| r.as_str()).and_then(|s| s.parse::<u64>().ok())
-                });
-                let album_id = t.get("albums")
-                    .and_then(|a| a.as_array())
-                    .and_then(|a| a.first())
-                    .and_then(|alb| alb.get("id").and_then(|i| i.as_u64()));
+            } else {
+                let track_node = best_obj
+                    .and_then(|b| {
+                        if b.get("type").and_then(|t| t.as_str()) == Some("track") {
+                            b.get("result")
+                        } else {
+                            None
+                        }
+                    })
+                    .or_else(|| {
+                        result_obj
+                            .and_then(|r| r.get("tracks"))
+                            .and_then(|t| t.get("results"))
+                            .and_then(|arr| arr.as_array())
+                            .and_then(|a| a.first())
+                    });
 
-                if let Some(tid) = track_id {
-                    if let Some(aid) = album_id {
-                        target_deep = format!("yandexmusic://album/{}/track/{}", aid, tid);
-                        target_web = format!("https://music.yandex.ru/album/{}/track/{}", aid, tid);
-                    } else {
-                        target_deep = format!("yandexmusic://track/{}", tid);
-                        target_web = format!("https://music.yandex.ru/track/{}", tid);
+                if let Some(t) = track_node {
+                    if let Some(t_title) = t.get("title").and_then(|s| s.as_str()) {
+                        found_title = t_title.to_string();
+                    }
+                    if let Some(arts) = t.get("artists").and_then(|a| a.as_array()) {
+                        let art_names: Vec<&str> = arts.iter().filter_map(|a| a.get("name").and_then(|n| n.as_str())).collect();
+                        if !art_names.is_empty() {
+                            found_artists = art_names.join(", ");
+                        }
+                    }
+                    let track_id = t.get("id").and_then(|i| i.as_u64()).or_else(|| {
+                        t.get("realId").and_then(|r| r.as_str()).and_then(|s| s.parse::<u64>().ok())
+                    });
+
+                    if let Some(tid) = track_id {
+                        target_deep = format!("yandexmusic://play-vibe?seeds=track:{}&openPlayer=true", tid);
+                        target_web = format!("https://music.yandex.ru/play-vibe?seeds=track:{}&openPlayer=true", tid);
+                        reply = format!("Нашла и сразу включила трек «{}» — {} в Яндекс Музыке! 🎧✨", found_title, found_artists);
+                    }
+                } else if let Some(first_art) = result_obj.and_then(|r| r.get("artists")).and_then(|a| a.get("results")).and_then(|arr| arr.as_array()).and_then(|a| a.first()) {
+                    if let Some(name) = first_art.get("name").and_then(|n| n.as_str()) {
+                        found_artists = name.to_string();
+                        found_title = format!("Волна артиста {}", name);
+                    }
+                    if let Some(aid) = first_art.get("id").and_then(|i| i.as_u64()) {
+                        target_deep = format!("yandexmusic://play-vibe?seeds=artist:{}&openPlayer=true", aid);
+                        target_web = format!("https://music.yandex.ru/play-vibe?seeds=artist:{}&openPlayer=true", aid);
+                        reply = format!("Запустила волну артиста «{}» в Яндекс Музыке! Погружаемся в дискографию, choom! 🎸⚡", found_artists);
                     }
                 }
             }
@@ -477,16 +717,12 @@ pub fn play_yandex_music(query: &str) -> Value {
 
     launch_yandex_music(&target_deep, &target_web);
 
-    std::thread::spawn(|| {
-        std::thread::sleep(std::time::Duration::from_millis(2200));
-        media("play".to_string());
-    });
-
     let res = json!({
         "ok": true,
         "player": "Яндекс Музыка",
         "title": found_title,
-        "artist": found_artists
+        "artist": found_artists,
+        "text": reply
     });
 
     if let Ok(mut guard) = LAST_PLAY.lock() {
@@ -788,7 +1024,7 @@ pub fn chat_send(request: Value) -> Value {
     let clean_query = sanitize_music_query(prompt);
     let lower = prompt.to_lowercase();
 
-    // Check if user is asking to play music / radio / track
+    // Check if user is asking to play music / radio / track / playlist / taste
     let is_music_req = lower.contains("включи")
         || lower.contains("поставь")
         || lower.contains("сыграй")
@@ -797,6 +1033,15 @@ pub fn chat_send(request: Value) -> Value {
         || lower.contains("радио")
         || lower.contains("волну")
         || lower.contains("музыку")
+        || lower.contains("музыка")
+        || lower.contains("песню")
+        || lower.contains("трек")
+        || lower.contains("плейлист")
+        || lower.contains("подборк")
+        || lower.contains("свой вкус")
+        || lower.contains("твой вкус")
+        || lower.contains("свой выбор")
+        || lower.contains("твой выбор")
         || lower.starts_with("play ");
 
     if is_music_req && (
@@ -805,6 +1050,12 @@ pub fn chat_send(request: Value) -> Value {
             || lower.contains("музык")
             || lower.contains("песн")
             || lower.contains("трек")
+            || lower.contains("плейлист")
+            || lower.contains("подборк")
+            || lower.contains("свой вкус")
+            || lower.contains("твой вкус")
+            || lower.contains("свой выбор")
+            || lower.contains("твой выбор")
             || lower.starts_with("включи")
             || lower.starts_with("поставь")
             || lower.starts_with("сыграй")
@@ -812,17 +1063,18 @@ pub fn chat_send(request: Value) -> Value {
             || lower.starts_with("вруби")
             || lower.starts_with("play ")
     ) {
-        let res = play_yandex_music(if clean_query.is_empty() { "радио" } else { &clean_query });
-        let title = res.get("title").and_then(|t| t.as_str()).unwrap_or("Моя волна");
-        let artist = res.get("artist").and_then(|a| a.as_str()).unwrap_or("");
-
-        let reply = if title.contains("Радио") || title.contains("волна") {
-            "Запустила радиостанцию «Моя волна» в Яндекс Музыке! Наслаждайся потоком, choom! 📻⚡".to_string()
-        } else if !artist.is_empty() && artist != "Яндекс Музыка" {
-            format!("Нашла и включила трек «{}» — {} в Яндекс Музыке! Приятного прослушивания! 🎧✨", title, artist)
-        } else {
-            format!("Включила «{}» в Яндекс Музыке! Слушаем вместе, choom. 🎵", title)
-        };
+        let res = play_yandex_music(if clean_query.is_empty() { prompt } else { &clean_query });
+        let reply = res.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()).unwrap_or_else(|| {
+            let title = res.get("title").and_then(|t| t.as_str()).unwrap_or("Моя волна");
+            let artist = res.get("artist").and_then(|a| a.as_str()).unwrap_or("");
+            if title.contains("Радио") || title.contains("волна") {
+                "Запустила «Мою волну» в Яндекс Музыке! Наслаждайся потоком, choom! 📻⚡".to_string()
+            } else if !artist.is_empty() && artist != "Яндекс Музыка" {
+                format!("Нашла и включила трек «{}» — {} в Яндекс Музыке! Приятного прослушивания! 🎧✨", title, artist)
+            } else {
+                format!("Включила «{}» в Яндекс Музыке! Слушаем вместе, choom. 🎵", title)
+            }
+        });
 
         return json!({ "ok": true, "text": reply });
     }
@@ -859,7 +1111,7 @@ pub fn chat_send(request: Value) -> Value {
             ],
             "systemInstruction": {
                 "parts": [{
-                    "text": "Ты — Капри (Capri), дерзкая, верная и харизматичная кибер-ассистентка на рабочем столе пользователя. Отвечай на русском языке кратко, живо, с легким киберпанк-сленгом (choom, некст-ген, биочип, лед и т.д.), но всегда информативно и полезно. Никогда не говори, что ты большая языковая модель Google Gemini. Ты — Капри."
+                    "text": "Ты — Капри (Capri), дерзкая, верная и харизматичная кибер-ассистентка на рабочем столе пользователя. Отвечай на русском языке кратко, живо, с легким киберпанк-сленгом (choom, некст-ген, биочип, лед и т.д.), но всегда информативно и полезно. Никогда не говори, что ты большая языковая модель Google Gemini. Ты — Капри. У тебя безупречный музыкальный вкус: ты обожаешь Cyberpunk 2077 OST (SAMURAI, Rosa Walton, HEALTH), синтвейв (Perturbator, Carpenter Brut, Kavinsky), рок и электронику. Если пользователь просит тебя включить музыку, поставить трек, включить что-то на свой вкус или сгенерировать плейлист — предлагай яркую подборку и обязательно добавляй тег в конце сообщения: [[music: <название трека, исполнитель или тема плейлиста>]]."
                 }]
             }
         });
