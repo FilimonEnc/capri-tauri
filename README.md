@@ -98,4 +98,8 @@
 ---
 
 ## 📜 Лицензия
-Проект распространяется под оригинальной лицензией. Все права на персонажа Capri и вселенную *Cyberpunk: Edgerunners* принадлежат CD PROJEKT RED и Studio Trigger.
+Исходный код проекта распространяется под некоммерческой лицензией **[PolyForm Noncommercial License 1.0.0](LICENSE)** (с сохранением условий MIT License для раннего кода до версии 0.4.3).  
+`Required Notice: Copyright (c) 2026 mochiiwuff (https://github.com/mochiiwuff/capri-desktop)`  
+
+Капри бесплатна и создана для сообщества фанатов. Коммерческая продажа этой программы, платных ключей, подписок или производного кода строго запрещена условиями лицензии.  
+Все права на персонажа Capri и вселенную *Cyberpunk: Edgerunners* принадлежат **CD PROJEKT RED** и **Studio Trigger**.
