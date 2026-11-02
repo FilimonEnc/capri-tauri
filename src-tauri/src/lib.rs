@@ -32,6 +32,7 @@ pub fn run() {
             commands::chat_send,
             commands::chat_memory,
             commands::chat_remember,
+            commands::use_provider,
             commands::get_system_stats,
             commands::get_hooks_status,
             commands::install_hooks,

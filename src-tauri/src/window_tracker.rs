@@ -9,6 +9,7 @@ use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT};
 use windows_sys::Win32::Graphics::Dwm::{
     DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS,
 };
+use windows_sys::Win32::Media::{timeBeginPeriod, timeEndPeriod};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetClassNameW, GetCursorPos, GetForegroundWindow, GetWindowLongW, IsIconic,
@@ -168,10 +169,15 @@ impl WindowTracker {
         let r = running.clone();
 
         thread::spawn(move || {
+            unsafe {
+                let _ = timeBeginPeriod(1);
+            }
+
             let mut last_pt = POINT { x: -9999, y: -9999 };
             let mut last_lbutton = false;
             let mut last_windows_snap = String::new();
-            let mut win_poll_counter: u32 = 0;
+            let mut fast_until = std::time::Instant::now();
+            let fast_duration = Duration::from_millis(350);
 
             while r.load(Ordering::Relaxed) {
                 // 1. Cursor position tracking in exact CSS pixels
@@ -183,16 +189,17 @@ impl WindowTracker {
                 let lbutton = unsafe { (GetAsyncKeyState(VK_LBUTTON as i32) as u16 & 0x8000) != 0 };
                 let rbutton = unsafe { (GetAsyncKeyState(VK_RBUTTON as i32) as u16 & 0x8000) != 0 };
 
-                let (win_x, win_y, win_w, win_h, sf) = if let Some(w) = app.get_webview_window("main") {
+                let (win_x, win_y, win_w, win_h, sf, monitors) = if let Some(w) = app.get_webview_window("main") {
                     let p = w.inner_position().unwrap_or(tauri::PhysicalPosition { x: 0, y: 0 });
                     let s = w.inner_size().unwrap_or(tauri::PhysicalSize {
                         width: 1920,
                         height: 1080,
                     });
                     let sf = w.scale_factor().unwrap_or(1.0);
-                    (p.x, p.y, s.width as i32, s.height as i32, sf)
+                    let mons = w.available_monitors().unwrap_or_default();
+                    (p.x, p.y, s.width as i32, s.height as i32, sf, mons)
                 } else {
-                    (0, 0, 1920, 1080, 1.0)
+                    (0, 0, 1920, 1080, 1.0, Vec::new())
                 };
 
                 let inside = current_pt.x >= win_x
@@ -202,6 +209,8 @@ impl WindowTracker {
 
                 let rel_x = ((current_pt.x - win_x) as f64 / sf).round() as i32;
                 let rel_y = ((current_pt.y - win_y) as f64 / sf).round() as i32;
+
+                let display_idx = crate::commands::find_monitor_index(&monitors, current_pt);
 
                 if current_pt.x != last_pt.x || current_pt.y != last_pt.y {
                     last_pt = current_pt;
@@ -213,7 +222,7 @@ impl WindowTracker {
                             "screen_x": current_pt.x,
                             "screen_y": current_pt.y,
                             "inside": inside,
-                            "display": 0,
+                            "display": display_idx,
                             "lbutton": lbutton,
                             "rbutton": rbutton
                         }),
@@ -242,19 +251,29 @@ impl WindowTracker {
                 }
                 last_lbutton = lbutton;
 
-                // 2. Window hierarchy tracking (polls every 10 iterations ~ 250ms)
-                win_poll_counter += 1;
-                if win_poll_counter >= 10 {
-                    win_poll_counter = 0;
-                    let snap = snapshot_windows(&app);
-                    let snap_str = snap.to_string();
-                    if snap_str != last_windows_snap {
-                        last_windows_snap = snap_str;
-                        let _ = app.emit("windows:update", snap);
-                    }
+                // 2. High-precision dynamic window snapshotting:
+                // When moving/dragging or recently changed, poll at ~144 Hz for seamless tracking
+                let in_motion = lbutton || rbutton || (std::time::Instant::now() < fast_until);
+
+                let snap = snapshot_windows(&app);
+                let snap_str = snap.to_string();
+                if snap_str != last_windows_snap {
+                    last_windows_snap = snap_str;
+                    fast_until = std::time::Instant::now() + fast_duration;
+                    let _ = app.emit("windows:update", snap);
                 }
 
-                thread::sleep(Duration::from_millis(25));
+                if in_motion {
+                    // ~144 Hz polling for high refresh-rate monitors
+                    thread::sleep(Duration::from_millis(7));
+                } else {
+                    // Resting state
+                    thread::sleep(Duration::from_millis(80));
+                }
+            }
+
+            unsafe {
+                let _ = timeEndPeriod(1);
             }
         });
 

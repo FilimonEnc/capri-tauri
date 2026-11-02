@@ -1739,6 +1739,7 @@ export class Capri {
         return;
       }
       down = { x: e.clientX, y: e.clientY, pos: { ...this.pos }, at: this.spritePoint(e.clientX, e.clientY) };
+      this.dragDown = down;
       this.track = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
       if (thrown) this.pickUp(down);
     });
@@ -1775,6 +1776,7 @@ export class Capri {
       }
       const wasDragging = this.dragging;
       down = null;
+      this.dragDown = null;
       this.dragging = false;
       if (!wasDragging) {
         this.onClick?.();
@@ -1792,6 +1794,55 @@ export class Capri {
       this.onTeleport?.('end');
       this.drop();
     });
+  }
+
+  updateDragPointer(clientX, clientY) {
+    if (!this.dragging) return;
+    this.mouse = { x: clientX, y: clientY };
+    const now = performance.now();
+    this.track.push({ x: clientX, y: clientY, t: now });
+    while (this.track.length > 2 && now - this.track[0].t > 160) this.track.shift();
+    const h = this.held;
+    const s = this.scale;
+    if (h) {
+      this.pos = {
+        x: clamp(clientX - (h.at.x - SPRITE.feet.x) * s * this.facing, 40, this.view.w - 40),
+        y: clamp(clientY - (h.at.y - SPRITE.feet.y) * s, SPRITE.height * this.scale * 0.5, this.floor),
+      };
+    } else {
+      this.pos = {
+        x: clamp(clientX, 40, this.view.w - 40),
+        y: clamp(clientY, SPRITE.height * this.scale * 0.5, this.floor),
+      };
+    }
+    this.p.glitchSeed = Math.random() * 100;
+    this.place();
+  }
+
+  transferDrag(clientX, clientY) {
+    if (!this.dragging) return;
+    this.mouse = { x: clientX, y: clientY };
+    this.track = [{ x: clientX, y: clientY, t: performance.now() }];
+    const h = this.held;
+    const s = this.scale;
+    if (h) {
+      this.pos = {
+        x: clamp(clientX - (h.at.x - SPRITE.feet.x) * s * this.facing, 40, this.view.w - 40),
+        y: clamp(clientY - (h.at.y - SPRITE.feet.y) * s, SPRITE.height * this.scale * 0.5, this.floor),
+      };
+    } else {
+      this.pos = {
+        x: clamp(clientX, 40, this.view.w - 40),
+        y: clamp(clientY, SPRITE.height * this.scale * 0.5, this.floor),
+      };
+    }
+    if (this.dragDown) {
+      this.dragDown.x = clientX;
+      this.dragDown.y = clientY;
+      this.dragDown.pos = { ...this.pos };
+    }
+    this.p.glitchSeed = Math.random() * 100;
+    this.place();
   }
 
   // How fast the pointer holding her was going just now (px/s): none if it had stopped.

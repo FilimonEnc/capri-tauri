@@ -3,6 +3,7 @@ use std::fs;
 use std::mem::size_of;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Manager, WebviewWindow};
 use windows_sys::Win32::Foundation::{FILETIME, POINT};
@@ -417,6 +418,36 @@ pub fn get_windows(app: tauri::AppHandle) -> Value {
     crate::window_tracker::snapshot_windows(&app)
 }
 
+pub fn find_monitor_index(monitors: &[tauri::Monitor], pt: POINT) -> usize {
+    for (i, m) in monitors.iter().enumerate() {
+        let pos = m.position();
+        let size = m.size();
+        if pt.x >= pos.x
+            && pt.x < pos.x + size.width as i32
+            && pt.y >= pos.y
+            && pt.y < pos.y + size.height as i32
+        {
+            return i;
+        }
+    }
+    let mut best_idx = 0;
+    let mut min_dist_sq = i64::MAX;
+    for (i, m) in monitors.iter().enumerate() {
+        let pos = m.position();
+        let size = m.size();
+        let cx = pos.x as i64 + (size.width as i64 / 2);
+        let cy = pos.y as i64 + (size.height as i64 / 2);
+        let dx = pt.x as i64 - cx;
+        let dy = pt.y as i64 - cy;
+        let dist_sq = dx * dx + dy * dy;
+        if dist_sq < min_dist_sq {
+            min_dist_sq = dist_sq;
+            best_idx = i;
+        }
+    }
+    best_idx
+}
+
 #[tauri::command]
 pub fn get_cursor(window: WebviewWindow) -> Value {
     let mut pt = POINT { x: 0, y: 0 };
@@ -432,13 +463,19 @@ pub fn get_cursor(window: WebviewWindow) -> Value {
     let inside = pt.x >= win_pos.x && pt.x < win_pos.x + win_size.width as i32
               && pt.y >= win_pos.y && pt.y < win_pos.y + win_size.height as i32;
 
+    let display_idx = if let Ok(monitors) = window.available_monitors() {
+        find_monitor_index(&monitors, pt)
+    } else {
+        0
+    };
+
     json!({
         "x": rel_x,
         "y": rel_y,
         "screen_x": pt.x,
         "screen_y": pt.y,
         "inside": inside,
-        "display": 0
+        "display": display_idx
     })
 }
 
@@ -452,7 +489,10 @@ pub fn move_screen(window: WebviewWindow, id: usize) -> Value {
             let _ = window.set_position(pos);
             let _ = window.set_size(size);
             return json!({
-                "origin": { "x": pos.x, "y": pos.y },
+                "origin": {
+                    "x": (pos.x as f64 / sf).round() as i32,
+                    "y": (pos.y as f64 / sf).round() as i32
+                },
                 "width": (size.width as f64 / sf).round() as i32,
                 "height": (size.height as f64 / sf).round() as i32,
                 "gap": 0
@@ -465,6 +505,12 @@ pub fn move_screen(window: WebviewWindow, id: usize) -> Value {
 #[tauri::command]
 pub fn get_screens(window: WebviewWindow) -> Value {
     if let Ok(monitors) = window.available_monitors() {
+        let win_pos = window.inner_position().unwrap_or(tauri::PhysicalPosition { x: 0, y: 0 });
+        let current_id = monitors
+            .iter()
+            .position(|m| m.position().x == win_pos.x && m.position().y == win_pos.y)
+            .unwrap_or(0);
+
         let list: Vec<Value> = monitors
             .iter()
             .enumerate()
@@ -474,8 +520,8 @@ pub fn get_screens(window: WebviewWindow) -> Value {
                 let sf = m.scale_factor();
                 json!({
                     "id": i,
-                    "x": pos.x,
-                    "y": pos.y,
+                    "x": (pos.x as f64 / sf).round() as i32,
+                    "y": (pos.y as f64 / sf).round() as i32,
                     "w": (size.width as f64 / sf).round() as i32,
                     "h": (size.height as f64 / sf).round() as i32,
                     "scale": sf
@@ -483,15 +529,15 @@ pub fn get_screens(window: WebviewWindow) -> Value {
             })
             .collect();
 
-        let win_pos = window.inner_position().unwrap_or(tauri::PhysicalPosition { x: 0, y: 0 });
-        let current_id = monitors
-            .iter()
-            .position(|m| m.position().x == win_pos.x && m.position().y == win_pos.y)
-            .unwrap_or(0);
+        let curr_m = monitors.get(current_id);
+        let curr_sf = curr_m.map(|m| m.scale_factor()).unwrap_or(1.0);
 
         return json!({
             "current": current_id,
-            "origin": { "x": win_pos.x, "y": win_pos.y },
+            "origin": {
+                "x": (win_pos.x as f64 / curr_sf).round() as i32,
+                "y": (win_pos.y as f64 / curr_sf).round() as i32
+            },
             "list": list
         });
     }
@@ -499,22 +545,102 @@ pub fn get_screens(window: WebviewWindow) -> Value {
 }
 
 #[tauri::command]
-pub fn chat_status() -> Value {
-    let mut has_ollama = false;
-    let mut models_count = 0;
-    if let Ok(res) = ureq::get("http://127.0.0.1:11434/api/tags").timeout(std::time::Duration::from_millis(600)).call() {
-        if let Ok(val) = res.into_json::<Value>() {
-            models_count = val.get("models").and_then(|m| m.as_array()).map(|a| a.len()).unwrap_or(0);
-            has_ollama = true;
+pub fn use_provider(choice: Value) -> Value {
+    let provider = choice.get("provider").and_then(|p| p.as_str()).unwrap_or("gemini").to_string();
+    let key = choice.get("key").and_then(|k| k.as_str()).map(|s| s.trim().to_string());
+    let url = choice.get("url").and_then(|u| u.as_str()).map(|s| s.trim().to_string());
+
+    let mut current = get_config();
+    let obj = current.as_object_mut().unwrap();
+    obj.insert("provider".to_string(), json!(provider));
+
+    if let Some(ref k) = key {
+        if !k.is_empty() {
+            if !obj.contains_key("apiKeys") || !obj.get("apiKeys").unwrap().is_object() {
+                obj.insert("apiKeys".to_string(), json!({}));
+            }
+            if let Some(keys_map) = obj.get_mut("apiKeys").and_then(|v| v.as_object_mut()) {
+                keys_map.insert(provider.clone(), json!(k));
+            }
+            obj.insert("key".to_string(), json!(k));
         }
     }
 
-    // Always returns ok: true so the chat panel opens reliably without setup blocks
+    if let Some(ref u) = url {
+        if !u.is_empty() {
+            obj.insert("customUrl".to_string(), json!(u));
+        }
+    }
+
+    let default_model = match provider.as_str() {
+        "gemini" => "gemini-1.5-flash",
+        "groq" => "llama-3.3-70b-versatile",
+        "openai" => "gpt-4o-mini",
+        "openrouter" => "anthropic/claude-3.5-haiku",
+        "mistral" => "mistral-small-latest",
+        "deepseek" => "deepseek-chat",
+        "ollama" => "llama3.2",
+        _ => "capri-brain",
+    };
+    obj.insert("chatModel".to_string(), json!(default_model));
+
+    let path = config_path();
+    let _ = fs::write(path, serde_json::to_string_pretty(&current).unwrap_or_default());
+
+    if provider == "gemini" {
+        if let Some(ref k) = key {
+            if k.is_empty() {
+                return json!({ "ok": false, "error": "API ключ не может быть пустым" });
+            }
+            let test_url = format!("https://generativelanguage.googleapis.com/v1beta/models?key={}", k);
+            match ureq::get(&test_url).timeout(Duration::from_secs(4)).call() {
+                Ok(_) => {
+                    return json!({ "ok": true, "model": default_model });
+                }
+                Err(ureq::Error::Status(code, resp)) => {
+                    if code == 400 || code == 403 {
+                        let err_msg = resp.into_string().unwrap_or_default();
+                        let error_text = if err_msg.contains("API_KEY_INVALID") {
+                            "Неверный API ключ Google Gemini"
+                        } else {
+                            "Ошибка проверки ключа Gemini API"
+                        };
+                        return json!({ "ok": false, "error": error_text });
+                    }
+                    return json!({ "ok": true, "model": default_model });
+                }
+                Err(_) => {
+                    return json!({ "ok": true, "model": default_model });
+                }
+            }
+        }
+    }
+
+    json!({ "ok": true, "model": default_model })
+}
+
+#[tauri::command]
+pub fn chat_status() -> Value {
+    let cfg = get_config();
+    let current_provider = cfg.get("provider").and_then(|p| p.as_str()).unwrap_or("ollama");
+    let current_model = cfg.get("chatModel").and_then(|m| m.as_str()).unwrap_or(
+        if current_provider == "gemini" { "gemini-1.5-flash" } else { "llama3.2" }
+    );
+
+    let mut has_ollama = false;
+    let mut models_count = 0;
+    if let Ok(res) = ureq::get("http://127.0.0.1:11434/api/tags").timeout(Duration::from_millis(600)).call() {
+        if let Ok(val) = res.into_json::<Value>() {
+            models_count = val.get("models").and_then(|m| m.as_array()).map(|a| a.len()).unwrap_or(0);
+            has_ollama = models_count > 0;
+        }
+    }
+
     json!({
         "ok": true,
-        "provider": if has_ollama { "ollama" } else { "capri-local" },
-        "model": if has_ollama { "llama3.2" } else { "capri-brain" },
-        "local": true,
+        "provider": current_provider,
+        "model": current_model,
+        "local": current_provider == "ollama" || (current_provider == "capri-local" && has_ollama),
         "warmup": false,
         "modelsCount": models_count
     })
@@ -576,6 +702,91 @@ pub fn chat_send(request: Value) -> Value {
         return json!({ "ok": true, "text": reply });
     }
 
+    let cfg = get_config();
+    let provider = cfg.get("provider").and_then(|p| p.as_str()).unwrap_or("ollama");
+    let api_key = cfg.get("apiKeys")
+        .and_then(|k| k.get(provider))
+        .or_else(|| cfg.get("key"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    // Gemini API integration
+    if provider == "gemini" && !api_key.is_empty() {
+        let gemini_url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={}",
+            api_key
+        );
+        let gemini_body = json!({
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{ "text": prompt }]
+                }
+            ],
+            "systemInstruction": {
+                "parts": [{
+                    "text": "Ты — Капри (Capri), дерзкая, верная и харизматичная кибер-ассистентка на рабочем столе пользователя. Отвечай на русском языке кратко, живо, с легким киберпанк-сленгом (choom, некст-ген, биочип, лед и т.д.), но всегда информативно и полезно. Никогда не говори, что ты большая языковая модель Google Gemini. Ты — Капри."
+                }]
+            }
+        });
+
+        if let Ok(res) = ureq::post(&gemini_url)
+            .timeout(Duration::from_secs(15))
+            .send_json(gemini_body)
+        {
+            if let Ok(resp) = res.into_json::<Value>() {
+                if let Some(text) = resp.get("candidates")
+                    .and_then(|c| c.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|first| first.get("content"))
+                    .and_then(|c| c.get("parts"))
+                    .and_then(|p| p.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|first| first.get("text"))
+                    .and_then(|t| t.as_str())
+                {
+                    return json!({ "ok": true, "text": text });
+                }
+            }
+        }
+    }
+
+    // OpenAI compatible providers (Groq, OpenAI, OpenRouter, DeepSeek)
+    if (provider == "groq" || provider == "openai" || provider == "openrouter" || provider == "deepseek") && !api_key.is_empty() {
+        let endpoint = match provider {
+            "groq" => "https://api.groq.com/openai/v1/chat/completions",
+            "openai" => "https://api.openai.com/v1/chat/completions",
+            "openrouter" => "https://openrouter.ai/api/v1/chat/completions",
+            "deepseek" => "https://api.deepseek.com/chat/completions",
+            _ => "https://api.openai.com/v1/chat/completions",
+        };
+        let model = cfg.get("chatModel").and_then(|m| m.as_str()).unwrap_or("gpt-4o-mini");
+        let body = json!({
+            "model": model,
+            "messages": [
+                { "role": "system", "content": "Ты — Капри, дерзкая кибернетическая ассистентка на рабочем столе. Отвечай кратко, живо, на русском." },
+                { "role": "user", "content": prompt }
+            ]
+        });
+        if let Ok(res) = ureq::post(endpoint)
+            .set("Authorization", &format!("Bearer {}", api_key))
+            .timeout(Duration::from_secs(15))
+            .send_json(body)
+        {
+            if let Ok(resp) = res.into_json::<Value>() {
+                if let Some(text) = resp.get("choices")
+                    .and_then(|c| c.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|first| first.get("message"))
+                    .and_then(|m| m.get("content"))
+                    .and_then(|t| t.as_str())
+                {
+                    return json!({ "ok": true, "text": text });
+                }
+            }
+        }
+    }
+
     // If Ollama is available, try it
     let req_body = json!({
         "model": "llama3.2",
@@ -583,7 +794,7 @@ pub fn chat_send(request: Value) -> Value {
         "stream": false
     });
     if let Ok(res) = ureq::post("http://127.0.0.1:11434/api/generate")
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(Duration::from_secs(10))
         .send_json(req_body)
     {
         if let Ok(resp) = res.into_json::<Value>() {
@@ -826,7 +1037,12 @@ pub fn is_antigravity_hooks_installed() -> bool {
 
 pub fn install_antigravity_hooks() -> Result<(), String> {
     let script_path = ensure_agy_hook_script();
-    let script_str = script_path.to_string_lossy().replace('\\', "\\\\");
+    let clean_script = script_path.to_string_lossy().to_string();
+    let script_arg = if clean_script.contains(' ') {
+        format!("\"{}\"", clean_script)
+    } else {
+        clean_script
+    };
 
     let mut path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push(".gemini");
@@ -851,25 +1067,25 @@ pub fn install_antigravity_hooks() -> Result<(), String> {
     let hook_entry = json!({
         "enabled": true,
         "SessionStart": [
-            { "type": "command", "command": format!("node \"{}\" SessionStart", script_str), "timeout": 5 }
+            { "type": "command", "command": format!("node {} SessionStart", script_arg), "timeout": 5 }
         ],
         "PreInvocation": [
-            { "type": "command", "command": format!("node \"{}\" PreInvocation", script_str), "timeout": 5 }
+            { "type": "command", "command": format!("node {} PreInvocation", script_arg), "timeout": 5 }
         ],
         "PreToolUse": [
             {
                 "matcher": "*",
-                "hooks": [{ "type": "command", "command": format!("node \"{}\" PreToolUse", script_str), "timeout": 5 }]
+                "hooks": [{ "type": "command", "command": format!("node {} PreToolUse", script_arg), "timeout": 5 }]
             }
         ],
         "PostToolUse": [
             {
                 "matcher": "*",
-                "hooks": [{ "type": "command", "command": format!("node \"{}\" PostToolUse", script_str), "timeout": 5 }]
+                "hooks": [{ "type": "command", "command": format!("node {} PostToolUse", script_arg), "timeout": 5 }]
             }
         ],
         "Stop": [
-            { "type": "command", "command": format!("node \"{}\" Stop", script_str), "timeout": 5 }
+            { "type": "command", "command": format!("node {} Stop", script_arg), "timeout": 5 }
         ]
     });
 

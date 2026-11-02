@@ -550,6 +550,31 @@ async function boot() {
     applySize(res);
     return res;
   };
+
+  let screenMoving = false;
+  window.__on_drag_move = async (at) => {
+    if (!screens || at.display == null) return;
+    if (at.display !== screens.current && !screenMoving) {
+      screenMoving = true;
+      try {
+        const targetDisplay = at.display;
+        const res = await moveTo(targetDisplay);
+        if (res) {
+          const targetScreen = screens.list.find((d) => d.id === targetDisplay);
+          const sf = targetScreen?.scale || 1.0;
+          const newX = at.x ?? Math.round(at.screen_x / sf) - (res.origin?.x || 0);
+          const newY = at.y ?? Math.round(at.screen_y / sf) - (res.origin?.y || 0);
+          capri.transferDrag(newX, newY);
+        }
+      } finally {
+        screenMoving = false;
+      }
+    } else if (capri.dragging) {
+      if (!at.inside) {
+        capri.updateDragPointer(at.x, at.y);
+      }
+    }
+  };
   capri.canCross = (side, y) => Boolean(beyond(side, y));
   capri.onCross = async (side, at) => {
     const there = beyond(side, at.y);

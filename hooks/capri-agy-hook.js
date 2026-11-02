@@ -16,15 +16,20 @@ const HOOK_TYPE = process.argv[2] || "PreToolUse";
 const REPLY_MAX = 6000;
 
 function respondAndExit() {
-  if (HOOK_TYPE === "PreToolUse") {
-    process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
-  } else if (HOOK_TYPE === "Stop") {
-    process.stdout.write(JSON.stringify({ decision: "stop" }) + "\n");
-  } else {
-    process.stdout.write("{}\n");
-  }
+  try {
+    if (HOOK_TYPE === "PreToolUse") {
+      process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
+    } else if (HOOK_TYPE === "Stop") {
+      process.stdout.write(JSON.stringify({ decision: "stop" }) + "\n");
+    } else {
+      process.stdout.write("{}\n");
+    }
+  } catch {}
   process.exit(0);
 }
+
+process.on("uncaughtException", () => respondAndExit());
+process.on("unhandledRejection", () => respondAndExit());
 
 setTimeout(respondAndExit, 2200).unref();
 

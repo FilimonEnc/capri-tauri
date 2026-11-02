@@ -39,9 +39,16 @@ listen('cursor:move', (event) => {
   const at = event.payload;
   if (!at) return;
 
-  // While user is dragging Capri, native browser mousemove already drives the physics at 1000Hz!
-  // Synthetic events would conflict and cause lag.
-  if (window.__capri_dragging) return;
+  if (window.__on_cursor_move) {
+    window.__on_cursor_move(at);
+  }
+
+  if (window.__capri_dragging) {
+    if (window.__on_drag_move) {
+      window.__on_drag_move(at);
+    }
+    return;
+  }
 
   const mouseEvent = new MouseEvent('mousemove', {
     clientX: at.x,
@@ -134,13 +141,29 @@ window.host = {
 
   // AI Setup fallbacks so Setup never crashes
   ollamaState: () => invoke('chat_status'),
-  setupInfo: () => Promise.resolve({ models: ['llama3.2', 'gemma3:4b'] }),
+  setupInfo: () => Promise.resolve({
+    models: [
+      { name: 'llama3.2', bytes: 2000000000 },
+      { name: 'gemma3:4b', bytes: 3300000000 },
+    ],
+    ram: 16 * 1024 * 1024 * 1024,
+  }),
   installOllama: () => Promise.resolve({ ok: false }),
   startOllama: () => Promise.resolve({ ok: false }),
   pullModel: () => Promise.resolve({ ok: false }),
   cancelSetup: () => {},
-  useProvider: (choice) => invoke('set_config', { patch: choice }),
-  keyPage: () => invoke('open_site', { url: 'https://aistudio.google.com/apikey' }),
+  useProvider: (choice) => invoke('use_provider', { choice }),
+  keyPage: (provider) => {
+    const pages = {
+      gemini: 'https://aistudio.google.com/apikey',
+      groq: 'https://console.groq.com/keys',
+      openai: 'https://platform.openai.com/api-keys',
+      openrouter: 'https://openrouter.ai/keys',
+      mistral: 'https://console.mistral.ai/api-keys',
+      deepseek: 'https://platform.deepseek.com/api_keys',
+    };
+    return invoke('open_site', { url: pages[provider] || 'https://aistudio.google.com/apikey' });
+  },
   launchThroughOllama: () => Promise.resolve({ ok: false }),
   onSetupProgress: on('setup:progress'),
 
