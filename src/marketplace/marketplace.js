@@ -368,7 +368,35 @@ const DEFAULT_CYBERWARE = [
     installed: false,
     enabled: false,
     async execute(query) {
-      return `[LINGUA_DB]: Запрос «${query}». Сленг Найт-Сити: «Choom / Чумба» — друг, напарник, надежный человек с улиц.`;
+      const q = String(query || '').toLowerCase().trim();
+      const DICT = [
+        { terms: ['choom', 'чумба', 'чум'], desc: '«Choom / Чумба» — друг, кореш, напарник, надежный человек с улиц Найт-Сити.' },
+        { terms: ['edgerunner', 'эджраннер', 'киберпанк'], desc: '«Edgerunner / Киберпанк» — уличный наёмник, балансирующий на грани между жизнью, законом и киберпсихозом.' },
+        { terms: ['corpo', 'корпо', 'корпорат'], desc: '«Corpo / Корпорат» — сотрудник мегакорпорации (Арасака, Милитех, Кан Тао). Презираемы на улицах.' },
+        { terms: ['chrome', 'хром', 'железо'], desc: '«Chrome / Хром» — киберимпланты, протезы, искусственные аугментации тела и боевые модули.' },
+        { terms: ['flatline', 'флэтлайн', 'офлайнуться'], desc: '«Flatline / Офлайнуться» — погибнуть, умереть, прерывание мозговой активности и пульса.' },
+        { terms: ['preem', 'прим', 'вышка'], desc: '«Preem / Вышка» — первоклассный, топовый, наивысшего качества товар или заказ.' },
+        { terms: ['delta', 'дельта', 'дельтануть'], desc: '«Delta / Дельтануть» — срочно скрыться, удрать, смыться с места перестрелки.' },
+        { terms: ['nova', 'нова', 'огонь'], desc: '«Nova / Огонь» — круто, потрясающе, высший класс.' },
+        { terms: ['ice', 'лед', 'лёд'], desc: '«ICE / Лёд (Intrusion Countermeasure Electronics)» — охранные боевые протоколы серверов.' },
+        { terms: ['netrunner', 'нетраннер'], desc: '«Netrunner / Нетраннер» — кибер-хакер Найт-Сити, погружающийся в Сеть через нейродеку.' },
+        { terms: ['sandevistan', 'сандевистан'], desc: '«Sandevistan / Сандевистан» — спинной нейроимплант для сверхчеловеческого ускорения восприятия.' },
+        { terms: ['arasaka', 'арасака'], desc: '«Arasaka (荒坂)» — японская мегакорпорация, мировой гегемон кибернетики и безопасности.' },
+        { terms: ['militech', 'милитех'], desc: '«Militech» — американская мегакорпорация, гигант оборонного сектора и оружия.' },
+        { terms: ['trauma team', 'траума'], desc: '«Trauma Team» — военизированная скорая помощь премиум-класса Найт-Сити.' },
+        { terms: ['gomi', 'гоми'], desc: '«Gomi (ゴミ)» — японск. «мусор / хлам», корпоративное оскорбление в адрес уличных жителей.' },
+        { terms: ['gonk', 'гонк'], desc: '«Gonk / Гонк» — придурок, тупица, неосторожный дурак, который долго не живёт.' },
+        { terms: ['ripperdoc', 'риппердок', 'риппер'], desc: '«Ripperdoc / Риппердок» — подпольный или сертифицированный киберхирург.' },
+        { terms: ['cyberpsychosis', 'киберпсихоз'], desc: '«Cyberpsychosis / Киберпсихоз» — диссоциативное расстройство от перегрузки тела киберимплантами.' }
+      ];
+
+      for (const entry of DICT) {
+        if (entry.terms.some(t => q.includes(t))) {
+          return `[LINGUA_DB // KANG TAO]: ${entry.desc}`;
+        }
+      }
+
+      return `[LINGUA_DB]: Запрос «${query}». Перевод с языка улиц зафиксирован в нейросети. Чумба, в Найт-Сити говори кратко и держи ствол наготове.`;
     }
   }
 ];
@@ -476,11 +504,15 @@ async function loadSkillsCatalog() {
     }
   } catch {}
 
-  // Merge default cyberware with server skills and custom skills from localStorage
+  // Merge default cyberware with server skills, custom skills, and persisted states
   const localCustom = JSON.parse(localStorage.getItem('capri_custom_skills') || '[]');
+  const localStates = JSON.parse(localStorage.getItem('capri_skills_state') || '{}');
   const map = new Map();
 
+  // 1. Defaults
   DEFAULT_CYBERWARE.forEach(s => map.set(s.id, { ...s }));
+
+  // 2. Server skills from Rust core bridge (/api/skills)
   serverSkills.forEach(s => {
     if (map.has(s.id)) {
       map.set(s.id, { ...map.get(s.id), ...s });
@@ -493,7 +525,25 @@ async function loadSkillsCatalog() {
       });
     }
   });
-  localCustom.forEach(s => map.set(s.id, s));
+
+  // 3. User custom created skills
+  localCustom.forEach(s => {
+    map.set(s.id, {
+      ...s,
+      execute: s.replyTemplate
+        ? async (query) => s.replyTemplate.replace('{input}', query).replace('{match}', query)
+        : async () => '[CUSTOM_MOD]: Модуль выполнил задачу.'
+    });
+  });
+
+  // 4. Client persisted installed & enabled states
+  for (const [id, st] of Object.entries(localStates)) {
+    if (map.has(id)) {
+      const item = map.get(id);
+      if (typeof st.installed === 'boolean') item.installed = st.installed;
+      if (typeof st.enabled === 'boolean') item.enabled = st.enabled;
+    }
+  }
 
   skillsCatalog = Array.from(map.values());
   updateCategoryBadges();
@@ -757,6 +807,15 @@ window.handleUninstall = async function(id) {
 function saveLocalState() {
   const custom = skillsCatalog.filter(s => s.isCustom);
   localStorage.setItem('capri_custom_skills', JSON.stringify(custom));
+
+  const states = {};
+  skillsCatalog.forEach(s => {
+    states[s.id] = {
+      installed: !!s.installed,
+      enabled: s.enabled !== false
+    };
+  });
+  localStorage.setItem('capri_skills_state', JSON.stringify(states));
 }
 
 // --- Interactive Capri Hologram Speech & Moods ---

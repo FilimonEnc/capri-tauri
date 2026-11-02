@@ -93,9 +93,9 @@ impl BridgeServer {
                     continue;
                 }
 
-                // GET /api/skills
+                // GET /api/skills - with persisted installed / enabled state
                 if method == "GET" && url.starts_with("/api/skills") {
-                    let skills_json = get_default_skills();
+                    let skills_json = get_skills_with_saved_state();
                     let mut res = Response::from_string(skills_json.to_string());
                     res.add_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
                     for h in cors_headers {
@@ -107,6 +107,53 @@ impl BridgeServer {
 
                 // POST /api/skills/install, uninstall, toggle
                 if method == "POST" && url.starts_with("/api/skills/") {
+                    let action = if url.starts_with("/api/skills/install") {
+                        "install"
+                    } else if url.starts_with("/api/skills/uninstall") {
+                        "uninstall"
+                    } else if url.starts_with("/api/skills/toggle") {
+                        "toggle"
+                    } else {
+                        "unknown"
+                    };
+
+                    let mut body_str = String::new();
+                    let _ = request.as_reader().read_to_string(&mut body_str);
+                    if let Ok(body_json) = serde_json::from_str::<Value>(&body_str) {
+                        if let Some(id) = body_json.get("id").and_then(|v| v.as_str()) {
+                            let cfg = crate::commands::get_config();
+                            let mut skills_map = cfg.get("skills")
+                                .and_then(|v| v.as_object().cloned())
+                                .unwrap_or_default();
+
+                            let mut current_state = skills_map.get(id)
+                                .and_then(|v| v.as_object().cloned())
+                                .unwrap_or_default();
+
+                            match action {
+                                "install" => {
+                                    current_state.insert("installed".into(), json!(true));
+                                    current_state.insert("enabled".into(), json!(true));
+                                }
+                                "uninstall" => {
+                                    current_state.insert("installed".into(), json!(false));
+                                    current_state.insert("enabled".into(), json!(false));
+                                }
+                                "toggle" => {
+                                    let en = body_json.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+                                    current_state.insert("enabled".into(), json!(en));
+                                    if en && !current_state.get("installed").and_then(|v| v.as_bool()).unwrap_or(false) {
+                                        current_state.insert("installed".into(), json!(true));
+                                    }
+                                }
+                                _ => {}
+                            }
+
+                            skills_map.insert(id.to_string(), Value::Object(current_state));
+                            let _ = crate::commands::set_config(json!({ "skills": skills_map }));
+                        }
+                    }
+
                     let mut res = Response::from_string("{\"ok\":true}");
                     res.add_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
                     for h in cors_headers {
@@ -302,6 +349,50 @@ pub fn get_default_skills() -> Value {
             "tags": ["music", "radio", "spotify", "yandex"],
             "installed": true,
             "enabled": true
+        },
+        {
+            "id": "biomonitor",
+            "name": "Trauma Team Biomonitor // Биомонитор Хоста",
+            "description": "Реальная диагностика ресурсов ПК: физическая RAM, загрузка CPU всех ядер, статус питания и аптайм.",
+            "category": "utilities",
+            "author": "MEDIC: TRAUMA TEAM PLATINUM",
+            "version": "2.0.0",
+            "icon": "🩺",
+            "tags": ["biomonitor", "ram", "cpu", "fps", "хост"],
+            "installed": true,
+            "enabled": true
+        },
+        {
+            "id": "translator",
+            "name": "Neural Lingua Translator // Нейро-переводчик",
+            "description": "Мгновенный перевод уличного сленга Найт-Сити, японских корпоративных терминов и технических логов.",
+            "category": "development",
+            "author": "CORPO: KANG TAO INTERPRETER",
+            "version": "1.1.0",
+            "icon": "🌐",
+            "tags": ["translate", "lingua", "japanese", "slang"],
+            "installed": false,
+            "enabled": false
         }
     ])
+}
+
+pub fn get_skills_with_saved_state() -> Value {
+    let mut skills = get_default_skills();
+    let cfg = crate::commands::get_config();
+    if let (Some(arr), Some(saved_skills)) = (skills.as_array_mut(), cfg.get("skills").and_then(|s| s.as_object())) {
+        for item in arr.iter_mut() {
+            if let Some(id) = item.get("id").and_then(|i| i.as_str()) {
+                if let Some(saved) = saved_skills.get(id) {
+                    if let Some(installed) = saved.get("installed").and_then(|v| v.as_bool()) {
+                        item["installed"] = json!(installed);
+                    }
+                    if let Some(enabled) = saved.get("enabled").and_then(|v| v.as_bool()) {
+                        item["enabled"] = json!(enabled);
+                    }
+                }
+            }
+        }
+    }
+    skills
 }

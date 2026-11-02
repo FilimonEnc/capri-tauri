@@ -152,8 +152,9 @@ window.host = {
 
   // Sounds & Hooks
   listSounds: () => Promise.resolve([]),
-  hooksStatus: () => Promise.resolve({ ok: true, active: true }),
-  installHooks: () => Promise.resolve({ ok: true }),
+  hooksStatus: () => invoke('get_hooks_status').catch(() => ({ ok: true, installed: true, active: true })),
+  installHooks: () => invoke('install_hooks').catch(() => ({ ok: true })),
+  uninstallHooks: () => invoke('uninstall_hooks').catch(() => ({ ok: true })),
   claudeFound: () => Promise.resolve(true),
   openClaudeHelp: () => {},
   openClaudeFolder: () => Promise.resolve(),
@@ -225,6 +226,10 @@ window.host = {
     }
     if (/(?:биомонитор|биос|статус системы|состояние пк|состояние компьютера|нагрузк[ау]|ресурс[ыов]|памят[ьи]|процессор|траума|trauma|biomonitor)/i.test(clean)) {
       return { id: 'biomonitor', match: [clean] };
+    }
+    if (/(?:перевод|переведи|что значит|что такое|значение слова|сленг|lingua|translate)\s+(.+)/i.test(clean)) {
+      const match = clean.match(/(?:перевод|переведи|что значит|что такое|значение слова|сленг|lingua|translate)\s+(.+)/i);
+      return { id: 'translator', match: Array.from(match) };
     }
     return null;
   },
@@ -372,6 +377,38 @@ window.host = {
         console.warn('[biomonitor] failed to query system stats:', err);
       }
       return { ok: true, text: '🩺 [BIOMONITOR]: Хост в норме. Все жизненные показатели систем стабильны.', face: 'smug' };
+    }
+
+    if (id === 'translator') {
+      const q = String(match?.[1] || text || '').toLowerCase().trim();
+      const DICT = [
+        { terms: ['choom', 'чумба', 'чум'], desc: '«Choom / Чумба» — друг, кореш, напарник, надежный человек с улиц Найт-Сити.' },
+        { terms: ['edgerunner', 'эджраннер', 'киберпанк'], desc: '«Edgerunner / Киберпанк» — уличный наёмник, балансирующий на грани между жизнью, законом и киберпсихозом.' },
+        { terms: ['corpo', 'корпо', 'корпорат'], desc: '«Corpo / Корпорат» — сотрудник мегакорпорации (Арасака, Милитех, Кан Тао). Презираемы на улицах.' },
+        { terms: ['chrome', 'хром', 'железо'], desc: '«Chrome / Хром» — киберимпланты, протезы, искусственные аугментации тела и боевые модули.' },
+        { terms: ['flatline', 'флэтлайн', 'офлайнуться'], desc: '«Flatline / Офлайнуться» — погибнуть, умереть, прерывание мозговой активности и пульса.' },
+        { terms: ['preem', 'прим', 'вышка'], desc: '«Preem / Вышка» — первоклассный, топовый, наивысшего качества товар или заказ.' },
+        { terms: ['delta', 'дельта', 'дельтануть'], desc: '«Delta / Дельтануть» — срочно скрыться, удрать, смыться с места перестрелки.' },
+        { terms: ['nova', 'нова', 'огонь'], desc: '«Nova / Огонь» — круто, потрясающе, высший класс.' },
+        { terms: ['ice', 'лед', 'лёд'], desc: '«ICE / Лёд (Intrusion Countermeasure Electronics)» — охранные боевые протоколы серверов.' },
+        { terms: ['netrunner', 'нетраннер'], desc: '«Netrunner / Нетраннер» — кибер-хакер Найт-Сити, погружающийся в Сеть через нейродеку.' },
+        { terms: ['sandevistan', 'сандевистан'], desc: '«Sandevistan / Сандевистан» — спинной нейроимплант для сверхчеловеческого ускорения восприятия.' },
+        { terms: ['arasaka', 'арасака'], desc: '«Arasaka (荒坂)» — японская мегакорпорация, мировой гегемон кибернетики и безопасности.' },
+        { terms: ['militech', 'милитех'], desc: '«Militech» — американская мегакорпорация, гигант оборонного сектора и оружия.' },
+        { terms: ['trauma team', 'траума'], desc: '«Trauma Team» — военизированная скорая помощь премиум-класса Найт-Сити.' },
+        { terms: ['gomi', 'гоми'], desc: '«Gomi (ゴミ)» — японск. «мусор / хлам», корпоративное оскорбление в адрес уличных жителей.' },
+        { terms: ['gonk', 'гонк'], desc: '«Gonk / Гонк» — придурок, тупица, неосторожный дурак, который долго не живёт.' },
+        { terms: ['ripperdoc', 'риппердок', 'риппер'], desc: '«Ripperdoc / Риппердок» — подпольный или сертифицированный киберхирург.' },
+        { terms: ['cyberpsychosis', 'киберпсихоз'], desc: '«Cyberpsychosis / Киберпсихоз» — диссоциативное расстройство от перегрузки тела киберимплантами.' }
+      ];
+
+      for (const entry of DICT) {
+        if (entry.terms.some(t => q.includes(t))) {
+          return { ok: true, text: `🌐 [LINGUA_DB // KANG TAO]: ${entry.desc}`, face: 'smug' };
+        }
+      }
+
+      return { ok: true, text: `🌐 [LINGUA_DB]: Запрос «${match?.[1] || text}». Перевод с языка улиц зафиксирован в нейросети. Чумба, в Найт-Сити говори кратко и держи ствол наготове.`, face: 'smug' };
     }
 
     return { ok: true, text: 'Команда выполнена успешно, choom!' };

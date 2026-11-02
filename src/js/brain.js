@@ -35,13 +35,22 @@ export class Brain {
     this.thinking = null;   // { s, since, said, fidget, gazed } while Claude is quiet mid-task
   }
 
+  get assistant() {
+    return this._assistant || 'claude';
+  }
+
+  set assistant(val) {
+    this._assistant = (val === 'antigravity' ? 'agy' : val);
+  }
+
   get t() {
     return linesFor(this.lang, this.assistant);
   }
 
   // the assistant she watches, as she calls it
   get name() {
-    return this.assistant === 'claude' ? 'Claude' : ASSISTANT_NAMES[this.assistant] || 'Claude';
+    const a = this.assistant;
+    return a === 'claude' ? 'Claude' : ASSISTANT_NAMES[a] || 'Antigravity';
   }
 
   session(evt) {
@@ -79,7 +88,8 @@ export class Brain {
     // Codex's and Antigravity's hooks mark their sessions (codex:..., agy:...): only the one she watches
     // counts. Another one at work is another AI in your life: she notices (bond.js).
     const source = /^(codex|agy):/.exec(String(evt.session_id || ''))?.[1] || 'claude';
-    if (!evt.demo && source !== this.assistant) {
+    const active = (this.assistant === 'antigravity' ? 'agy' : this.assistant);
+    if (!evt.demo && source !== active) {
       this.onRival?.(source === 'agy' ? 'gemini' : source);
       return undefined;
     }

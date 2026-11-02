@@ -738,9 +738,21 @@ pub fn open_menu(window: WebviewWindow) {
     let sep2 = PredefinedMenuItem::separator(app).unwrap();
 
     // Skills & Hooks
+    let ag_installed = is_antigravity_hooks_installed();
+    let stat_label = if ag_installed {
+        "Хуки Antigravity: ● установлены"
+    } else {
+        "Хуки Antigravity: ○ не установлены"
+    };
+    let toggle_label = if ag_installed {
+        "Удалить хуки Antigravity"
+    } else {
+        "Установить хуки Antigravity"
+    };
+
     let item_market = MenuItem::with_id(app, "menu_market", "⚡ Маркетплейс навыков (Skills)", true, None::<&str>).unwrap();
-    let item_hooks_stat = MenuItem::with_id(app, "hooks_stat", "Хуки Antigravity: установлены", false, None::<&str>).unwrap();
-    let item_hooks_del = MenuItem::with_id(app, "hooks_toggle", "Удалить хуки Antigravity", true, None::<&str>).unwrap();
+    let item_hooks_stat = MenuItem::with_id(app, "hooks_stat", stat_label, false, None::<&str>).unwrap();
+    let item_hooks_del = MenuItem::with_id(app, "hooks_toggle", toggle_label, true, None::<&str>).unwrap();
 
     let sep3 = PredefinedMenuItem::separator(app).unwrap();
 
@@ -782,4 +794,132 @@ pub fn open_menu(window: WebviewWindow) {
     ) {
         let _ = window.popup_menu(&menu);
     }
+}
+
+const AGY_HOOK_JS: &str = include_str!("../../hooks/capri-agy-hook.js");
+
+pub fn ensure_agy_hook_script() -> PathBuf {
+    let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
+    let hooks_dir = PathBuf::from(local_app_data).join("Capri").join("hooks");
+    let _ = fs::create_dir_all(&hooks_dir);
+    let script_path = hooks_dir.join("capri-agy-hook.js");
+    let need_write = !script_path.exists()
+        || fs::metadata(&script_path).map(|m| m.len()).unwrap_or(0) != AGY_HOOK_JS.len() as u64;
+    if need_write {
+        let _ = fs::write(&script_path, AGY_HOOK_JS);
+    }
+    script_path
+}
+
+pub fn is_antigravity_hooks_installed() -> bool {
+    let mut path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    path.push(".gemini");
+    path.push("config");
+    path.push("hooks.json");
+    if path.exists() {
+        if let Ok(content) = fs::read_to_string(&path) {
+            return content.contains("capri-agy") || content.contains("capri-hook.js");
+        }
+    }
+    false
+}
+
+pub fn install_antigravity_hooks() -> Result<(), String> {
+    let script_path = ensure_agy_hook_script();
+    let script_str = script_path.to_string_lossy().replace('\\', "\\\\");
+
+    let mut path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    path.push(".gemini");
+    path.push("config");
+    let _ = fs::create_dir_all(&path);
+    path.push("hooks.json");
+
+    let mut current_json: Value = if path.exists() {
+        if let Ok(content) = fs::read_to_string(&path) {
+            serde_json::from_str(&content).unwrap_or(json!({}))
+        } else {
+            json!({})
+        }
+    } else {
+        json!({})
+    };
+
+    if !current_json.is_object() {
+        current_json = json!({});
+    }
+
+    let hook_entry = json!({
+        "enabled": true,
+        "SessionStart": [
+            { "type": "command", "command": format!("node \"{}\" SessionStart", script_str), "timeout": 5 }
+        ],
+        "PreInvocation": [
+            { "type": "command", "command": format!("node \"{}\" PreInvocation", script_str), "timeout": 5 }
+        ],
+        "PreToolUse": [
+            {
+                "matcher": "*",
+                "hooks": [{ "type": "command", "command": format!("node \"{}\" PreToolUse", script_str), "timeout": 5 }]
+            }
+        ],
+        "PostToolUse": [
+            {
+                "matcher": "*",
+                "hooks": [{ "type": "command", "command": format!("node \"{}\" PostToolUse", script_str), "timeout": 5 }]
+            }
+        ],
+        "Stop": [
+            { "type": "command", "command": format!("node \"{}\" Stop", script_str), "timeout": 5 }
+        ]
+    });
+
+    if let Some(obj) = current_json.as_object_mut() {
+        obj.insert("capri-agy".to_string(), hook_entry);
+    }
+
+    let formatted = serde_json::to_string_pretty(&current_json).map_err(|e| e.to_string())?;
+    fs::write(&path, formatted).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn uninstall_antigravity_hooks() -> Result<(), String> {
+    let mut path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    path.push(".gemini");
+    path.push("config");
+    path.push("hooks.json");
+
+    if path.exists() {
+        if let Ok(content) = fs::read_to_string(&path) {
+            if let Ok(mut current_json) = serde_json::from_str::<Value>(&content) {
+                if let Some(obj) = current_json.as_object_mut() {
+                    obj.remove("capri-agy");
+                    let formatted = serde_json::to_string_pretty(&current_json).map_err(|e| e.to_string())?;
+                    let _ = fs::write(&path, formatted);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_hooks_status() -> Value {
+    let installed = is_antigravity_hooks_installed();
+    json!({
+        "ok": true,
+        "installed": installed,
+        "active": installed
+    })
+}
+
+#[tauri::command]
+pub fn install_hooks() -> Result<bool, String> {
+    install_antigravity_hooks()?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn uninstall_hooks() -> Result<bool, String> {
+    uninstall_antigravity_hooks()?;
+    Ok(true)
 }

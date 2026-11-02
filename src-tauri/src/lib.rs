@@ -33,6 +33,9 @@ pub fn run() {
             commands::chat_memory,
             commands::chat_remember,
             commands::get_system_stats,
+            commands::get_hooks_status,
+            commands::install_hooks,
+            commands::uninstall_hooks,
         ])
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
@@ -181,6 +184,7 @@ pub fn run() {
                         let _ = w.emit("capri:config", commands::get_config());
                     }
                     "watch_antigravity" => {
+                        let _ = commands::install_antigravity_hooks();
                         let _ = commands::set_config(json!({ "assistant": "antigravity" }));
                         let _ = w.emit("capri:config", commands::get_config());
                         let _ = w.emit("capri:command", json!({ "name": "assistantChanged" }));
@@ -251,7 +255,14 @@ pub fn run() {
                         let _ = w.emit("capri:config", commands::get_config());
                     }
                     "hooks_toggle" => {
-                        let _ = w.emit("capri:command", json!({ "name": "hooks", "ok": true, "action": "uninstall" }));
+                        let installed = commands::is_antigravity_hooks_installed();
+                        if installed {
+                            let _ = commands::uninstall_antigravity_hooks();
+                            let _ = w.emit("capri:command", json!({ "name": "hooks", "ok": true, "action": "uninstall" }));
+                        } else {
+                            let _ = commands::install_antigravity_hooks();
+                            let _ = w.emit("capri:command", json!({ "name": "hooks", "ok": true, "action": "install" }));
+                        }
                     }
                     _ => {}
                 }
@@ -259,6 +270,13 @@ pub fn run() {
         })
         .setup(|app| {
             let handle = app.handle().clone();
+
+            // Ensure Antigravity hooks if Antigravity assistant is chosen
+            let cfg = commands::get_config();
+            let asst = cfg.get("assistant").and_then(|v| v.as_str()).unwrap_or("antigravity");
+            if asst == "antigravity" || asst == "agy" {
+                let _ = commands::install_antigravity_hooks();
+            }
 
             // Start native Win32 Window & Cursor Tracker (120 FPS / 60 FPS)
             let _tracker = WindowTracker::start(handle.clone());

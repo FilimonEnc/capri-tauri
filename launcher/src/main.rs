@@ -2,6 +2,7 @@
 
 use std::env;
 use std::fs;
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -31,6 +32,7 @@ fn main() {
     let mut cmd = Command::new(&exe_path);
     cmd.current_dir(&bin_dir);
     cmd.args(env::args().skip(1));
+    cmd.creation_flags(0x00000200 | 0x00000008);
     let _ = cmd.spawn();
 }
 
