@@ -44,6 +44,19 @@ listen('cursor:move', (event) => {
   }
 
   if (window.__capri_dragging) {
+    if (at.lbutton === false) {
+      window.__capri_dragging = false;
+      const mouseEvent = new MouseEvent('mouseup', {
+        clientX: at.x,
+        clientY: at.y,
+        button: 0,
+        bubbles: true,
+        cancelable: true,
+      });
+      window.dispatchEvent(mouseEvent);
+      document.dispatchEvent(mouseEvent);
+      return;
+    }
     if (window.__on_drag_move) {
       window.__on_drag_move(at);
     }

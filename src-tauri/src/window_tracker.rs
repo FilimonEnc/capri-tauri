@@ -202,6 +202,18 @@ impl WindowTracker {
                     (0, 0, 1920, 1080, 1.0, Vec::new())
                 };
 
+                let display_idx = crate::commands::find_monitor_index(&monitors, current_pt);
+
+                let (mon_x, mon_y, mon_sf) = if let Some(m) = monitors.get(display_idx) {
+                    let p = m.position();
+                    (p.x, p.y, m.scale_factor())
+                } else {
+                    (win_x, win_y, sf)
+                };
+
+                let local_x = ((current_pt.x - mon_x) as f64 / mon_sf).round() as i32;
+                let local_y = ((current_pt.y - mon_y) as f64 / mon_sf).round() as i32;
+
                 let inside = current_pt.x >= win_x
                     && current_pt.x < win_x + win_w
                     && current_pt.y >= win_y
@@ -210,15 +222,17 @@ impl WindowTracker {
                 let rel_x = ((current_pt.x - win_x) as f64 / sf).round() as i32;
                 let rel_y = ((current_pt.y - win_y) as f64 / sf).round() as i32;
 
-                let display_idx = crate::commands::find_monitor_index(&monitors, current_pt);
-
                 if current_pt.x != last_pt.x || current_pt.y != last_pt.y {
                     last_pt = current_pt;
                     let _ = app.emit(
                         "cursor:move",
                         json!({
-                            "x": rel_x,
-                            "y": rel_y,
+                            "x": local_x,
+                            "y": local_y,
+                            "local_x": local_x,
+                            "local_y": local_y,
+                            "win_rel_x": rel_x,
+                            "win_rel_y": rel_y,
                             "screen_x": current_pt.x,
                             "screen_y": current_pt.y,
                             "inside": inside,
@@ -234,8 +248,12 @@ impl WindowTracker {
                     let _ = app.emit(
                         "cursor:up",
                         json!({
-                            "x": rel_x,
-                            "y": rel_y,
+                            "x": local_x,
+                            "y": local_y,
+                            "local_x": local_x,
+                            "local_y": local_y,
+                            "screen_x": current_pt.x,
+                            "screen_y": current_pt.y,
                             "button": 0
                         }),
                     );
@@ -243,8 +261,12 @@ impl WindowTracker {
                     let _ = app.emit(
                         "cursor:down",
                         json!({
-                            "x": rel_x,
-                            "y": rel_y,
+                            "x": local_x,
+                            "y": local_y,
+                            "local_x": local_x,
+                            "local_y": local_y,
+                            "screen_x": current_pt.x,
+                            "screen_y": current_pt.y,
                             "button": 0
                         }),
                     );

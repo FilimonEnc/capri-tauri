@@ -829,15 +829,24 @@ pub fn get_cursor(window: WebviewWindow) -> Value {
     let inside = pt.x >= win_pos.x && pt.x < win_pos.x + win_size.width as i32
               && pt.y >= win_pos.y && pt.y < win_pos.y + win_size.height as i32;
 
-    let display_idx = if let Ok(monitors) = window.available_monitors() {
-        find_monitor_index(&monitors, pt)
+    let monitors = window.available_monitors().unwrap_or_default();
+    let display_idx = find_monitor_index(&monitors, pt);
+    let (mon_x, mon_y, mon_sf) = if let Some(m) = monitors.get(display_idx) {
+        let p = m.position();
+        (p.x, p.y, m.scale_factor())
     } else {
-        0
+        (win_pos.x, win_pos.y, sf)
     };
+    let local_x = ((pt.x - mon_x) as f64 / mon_sf).round() as i32;
+    let local_y = ((pt.y - mon_y) as f64 / mon_sf).round() as i32;
 
     json!({
-        "x": rel_x,
-        "y": rel_y,
+        "x": local_x,
+        "y": local_y,
+        "local_x": local_x,
+        "local_y": local_y,
+        "win_rel_x": rel_x,
+        "win_rel_y": rel_y,
         "screen_x": pt.x,
         "screen_y": pt.y,
         "inside": inside,
@@ -861,7 +870,10 @@ pub fn move_screen(window: WebviewWindow, id: usize) -> Value {
                 },
                 "width": (size.width as f64 / sf).round() as i32,
                 "height": (size.height as f64 / sf).round() as i32,
-                "gap": 0
+                "gap": 0,
+                "phys_x": pos.x,
+                "phys_y": pos.y,
+                "scale": sf
             });
         }
     }
@@ -872,9 +884,20 @@ pub fn move_screen(window: WebviewWindow, id: usize) -> Value {
 pub fn get_screens(window: WebviewWindow) -> Value {
     if let Ok(monitors) = window.available_monitors() {
         let win_pos = window.inner_position().unwrap_or(tauri::PhysicalPosition { x: 0, y: 0 });
+        let win_size = window.inner_size().unwrap_or(tauri::PhysicalSize { width: 1920, height: 1080 });
+        let win_cx = win_pos.x + (win_size.width as i32 / 2);
+        let win_cy = win_pos.y + (win_size.height as i32 / 2);
+
         let current_id = monitors
             .iter()
-            .position(|m| m.position().x == win_pos.x && m.position().y == win_pos.y)
+            .position(|m| {
+                let p = m.position();
+                let s = m.size();
+                win_cx >= p.x && win_cx < p.x + s.width as i32 && win_cy >= p.y && win_cy < p.y + s.height as i32
+            })
+            .or_else(|| {
+                monitors.iter().position(|m| m.position().x == win_pos.x && m.position().y == win_pos.y)
+            })
             .unwrap_or(0);
 
         let list: Vec<Value> = monitors
@@ -890,7 +913,11 @@ pub fn get_screens(window: WebviewWindow) -> Value {
                     "y": (pos.y as f64 / sf).round() as i32,
                     "w": (size.width as f64 / sf).round() as i32,
                     "h": (size.height as f64 / sf).round() as i32,
-                    "scale": sf
+                    "scale": sf,
+                    "phys_x": pos.x,
+                    "phys_y": pos.y,
+                    "phys_w": size.width,
+                    "phys_h": size.height
                 })
             })
             .collect();

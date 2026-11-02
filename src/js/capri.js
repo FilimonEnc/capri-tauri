@@ -1815,6 +1815,11 @@ export class Capri {
         y: clamp(clientY, SPRITE.height * this.scale * 0.5, this.floor),
       };
     }
+    if (this.dragDown) {
+      this.dragDown.x = clientX;
+      this.dragDown.y = clientY;
+      this.dragDown.pos = { ...this.pos };
+    }
     this.p.glitchSeed = Math.random() * 100;
     this.place();
   }
