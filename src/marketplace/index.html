@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CAPRI // CYBERPUNK EDGERUNNERS MARKETPLACE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,600;0,700;1,700&family=Orbitron:wght@500;700;900&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/marketplace/marketplace.css">
+  <link rel="stylesheet" href="marketplace.css">
+</head>
+<body class="cyber-body">
+  <!-- Scanlines, Grid Floor & CRT overlay -->
+  <div class="crt-overlay"></div>
+  <div class="scanlines"></div>
+  <div class="cyber-grid-floor"></div>
+
+  <!-- HUD Top Bar -->
+  <header class="cyber-header">
+    <div class="header-left">
+      <div class="glitch-logo" data-text="CAPRI // 2077">
+        <span class="logo-accent">⚡</span> CAPRI <span class="logo-sub">// EDGERUNNER CONSTRUCT</span>
+      </div>
+      <div class="hud-badge pulse-border">
+        <span class="pulse-led"></span>
+        <span id="connectionText">NETWATCH: SYNCING...</span>
+      </div>
+    </div>
+
+    <div class="header-center">
+      <div class="nc-telemetry">
+        <span class="tele-item"><span class="tele-label">LOC:</span> NIGHT CITY [WATSON]</span>
+        <span class="tele-divider">/</span>
+        <span class="tele-item"><span class="tele-label">TIME:</span> <span id="ncClock">2077.11.02 // 00:00:00</span></span>
+        <span class="tele-divider">/</span>
+        <span class="tele-item highlight-cyan"><span class="tele-label">SANDEVISTAN:</span> 120 FPS</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <button class="sound-toggle-btn" id="soundToggleBtn" title="Переключить кибер-звуки">
+        <span class="sound-icon" id="soundIcon">🔊</span>
+        <span class="sound-text">AUDIO FX: ON</span>
+      </button>
+      <div class="danger-stripes mini"></div>
+    </div>
+  </header>
+
+  <main class="cyber-container">
+    <!-- Hero Banner with Capri Interactive Hologram -->
+    <section class="edgerunner-hero">
+      <div class="hero-corner top-left"></div>
+      <div class="hero-corner top-right"></div>
+      <div class="hero-corner bottom-left"></div>
+      <div class="hero-corner bottom-right"></div>
+
+      <div class="hero-grid">
+        <!-- Hero Left: Info & Actions -->
+        <div class="hero-info">
+          <div class="protocol-tag">
+            <span class="tag-bracket">[</span>
+            <span class="tag-core">ARASAKA &bull; NEURAL MOD PROTOCOL v2.05</span>
+            <span class="tag-bracket">]</span>
+          </div>
+
+          <h1 class="hero-glitch-title" data-text="CHROME YOUR CONSTRUCT">
+            CHROME YOUR <span class="highlight-yellow">CONSTRUCT</span>
+          </h1>
+
+          <p class="hero-desc">
+            Прокачай виртуального компаньона Капри первоклассным софтом Найт-Сити! 
+            Кибердеки, взлом вражеского ICE, радары погоды и уличные утилиты. Установка на лету без перезагрузки биочипа.
+          </p>
+
+          <div class="hero-telemetry-panel">
+            <div class="tele-stat">
+              <span class="stat-name">СИНХРОНИЗАЦИЯ:</span>
+              <div class="stat-bar-wrap">
+                <div class="stat-bar" style="width: 98.4%;"></div>
+              </div>
+              <span class="stat-val highlight-cyan">98.4%</span>
+            </div>
+            <div class="tele-stat">
+              <span class="stat-name">РИСК КИБЕРПСИХОЗА:</span>
+              <div class="stat-bar-wrap">
+                <div class="stat-bar danger" style="width: 1.2%;"></div>
+              </div>
+              <span class="stat-val highlight-green">0.4% [SAFE]</span>
+            </div>
+            <div class="tele-stat">
+              <span class="stat-name">АКТИВНЫЙ ХРОМ:</span>
+              <span class="stat-val highlight-yellow" id="installedCountBadge">5 / 8 СЛОТОВ</span>
+            </div>
+          </div>
+
+          <div class="hero-actions">
+            <button class="cyber-btn btn-yellow" id="openCustomModalBtn">
+              <span class="btn-cut"></span>
+              <span class="btn-text">⚡ [+ RIPPERDOC LAB // СОЗДАТЬ МОД]</span>
+            </button>
+            <button class="cyber-btn btn-cyan" id="refreshBtn">
+              <span class="btn-cut"></span>
+              <span class="btn-text">🔄 СКАНИРОВАТЬ СЕТЬ</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Hero Right: Interactive Capri Hologram -->
+        <div class="hero-capri-hologram">
+          <div class="holo-target-ring"></div>
+          <div class="holo-scanline"></div>
+
+          <!-- Sandevistan chromatic ghost trails behind Capri -->
+          <div class="capri-trail trail-cyan"></div>
+          <div class="capri-trail trail-yellow"></div>
+          <div class="capri-trail trail-pink"></div>
+
+          <!-- Main interactive Capri avatar -->
+          <div class="capri-avatar-wrap" id="capriAvatarContainer" title="Кликни по Капри для смены реплики!">
+            <img src="/marketplace/assets/capri-cutout.png" alt="Capri Hologram" class="capri-main-img" id="capriMainImg">
+            <div class="holo-flicker"></div>
+          </div>
+
+          <!-- Capri Reactive Speech Bubble -->
+          <div class="capri-speech-bubble" id="capriSpeechBubble">
+            <div class="bubble-header">
+              <span class="capri-name">CAPRI // AI CONSTRUCT</span>
+              <span class="speech-status">NEURAL_VOICE: ON</span>
+            </div>
+            <div class="bubble-content" id="capriQuoteText">
+              «Здорово, choom! Заглянул в риппердок? Мой кибердек готов к новым модулям. Выбирай первоклассный хром!»
+            </div>
+            <div class="bubble-emotions">
+              <button class="emo-btn active" data-face="smug" data-img="assets/face-smug.png">😏 Smug</button>
+              <button class="emo-btn" data-face="laugh" data-img="assets/face-laugh.png">😆 Laugh</button>
+              <button class="emo-btn" data-face="calm" data-img="assets/face-calm.png">😌 Calm</button>
+              <button class="emo-btn" data-face="wide" data-img="assets/face-wide.png">⚡ Hyper</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Cyberdeck Navigation & Filter Bar -->
+    <section class="cyber-toolbar">
+      <div class="search-box">
+        <span class="search-prefix">&gt;_</span>
+        <input type="text" id="skillSearchInput" placeholder="ПОИСК ХРОМА // ВВЕДИ НАЗВАНИЕ, ТЕГ ИЛИ КОМАНДУ..." autocomplete="off">
+        <button class="search-clear-btn" id="searchClearBtn">&times;</button>
+      </div>
+
+      <div class="category-cartridges" id="categoryNav">
+        <button class="cartridge-tab active" data-cat="all">
+          <span class="tab-chip">#01</span>
+          <span class="tab-title">ALL CHROME</span>
+          <span class="tab-badge" id="catCountAll">8</span>
+        </button>
+        <button class="cartridge-tab" data-cat="utilities">
+          <span class="tab-chip">#02</span>
+          <span class="tab-title">🛠️ УТИЛИТЫ</span>
+          <span class="tab-badge" id="catCountUtil">2</span>
+        </button>
+        <button class="cartridge-tab" data-cat="productivity">
+          <span class="tab-chip">#03</span>
+          <span class="tab-title">⚡ ПРОДУКТИВНОСТЬ</span>
+          <span class="tab-badge" id="catCountProd">2</span>
+        </button>
+        <button class="cartridge-tab" data-cat="fun">
+          <span class="tab-chip">#04</span>
+          <span class="tab-title">🎲 BRAINDANCE / ФАН</span>
+          <span class="tab-badge" id="catCountFun">2</span>
+        </button>
+        <button class="cartridge-tab" data-cat="development">
+          <span class="tab-chip">#05</span>
+          <span class="tab-title">💻 NETRUNNER TOOLS</span>
+          <span class="tab-badge" id="catCountDev">2</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Skills Catalog Grid -->
+    <section class="skills-catalog-section">
+      <div class="section-header">
+        <div class="section-title">
+          <span class="section-code">[SEC-08 // MARKET_FEED]</span>
+          <h2>ДОСТУПНЫЕ МОДУЛИ РАСШИРЕНИЯ</h2>
+        </div>
+        <div class="section-legend">
+          <span class="legend-item"><span class="legend-box installed"></span> УСТАНОВЛЕНО</span>
+          <span class="legend-item"><span class="legend-box available"></span> ДОСТУПНО</span>
+        </div>
+      </div>
+
+      <div class="skills-grid" id="skillsGrid">
+        <div class="loading-state">
+          <div class="cyber-spinner"></div>
+          <p>СКАНИРОВАНИЕ КИБЕРДЕКА И ПОДКЛЮЧЕНИЕ К МОСТУ...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Skill Interactive Test Drawer / Console -->
+    <div class="test-drawer" id="testDrawer">
+      <div class="drawer-header">
+        <div class="drawer-title">
+          <span class="terminal-dot"></span>
+          <span>CYBER-CONSOLE // ТЕСТ МОДУЛЯ: <strong id="testDrawerSkillName">...</strong></span>
+        </div>
+        <button class="drawer-close" id="testDrawerCloseBtn">&times;</button>
+      </div>
+      <div class="drawer-body">
+        <div class="drawer-log" id="testDrawerLog">
+          <div class="log-line sys">&gt; Подключение к нейросети Капри успешно. Введите тестовый запрос:</div>
+        </div>
+        <div class="drawer-input-row">
+          <span class="prompt-arrow">&gt;&gt;&gt;</span>
+          <input type="text" id="testPromptInput" placeholder="Например: сколько будет 240 * 15 или какая погода в Токио">
+          <button class="cyber-btn btn-yellow mini" id="testSendBtn">ВЫПОЛНИТЬ</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal: Ripperdoc Lab (Custom Skill Creator) -->
+  <div class="cyber-modal-backdrop" id="customModal">
+    <div class="cyber-modal">
+      <div class="hazard-stripe top"></div>
+      
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-code">[RIPPERDOC SURGERY // CONSTRUCT MODIFIER]</span>
+          <h3>⚡ СОЗДАНИЕ НЕЙРО-МОДУЛЯ ДЛЯ КАПРИ</h3>
+        </div>
+        <button class="modal-close-btn" id="closeModalBtn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-col">
+            <label class="cyber-label"><span class="label-accent">[ID]</span> ИДЕНТИФИКАТОР МОДУЛЯ</label>
+            <input type="text" class="cyber-input" id="skillIdInput" placeholder="cyber-hack-skill">
+            <span class="input-hint">Латинские буквы, цифры, дефис. Пример: edgerunner-alert</span>
+          </div>
+          <div class="form-col">
+            <label class="cyber-label"><span class="label-accent">[NAME]</span> НАЗВАНИЕ МОДУЛЯ</label>
+            <input type="text" class="cyber-input" id="skillNameInput" placeholder="ICE Breaker / Взлом ICE">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-col">
+            <label class="cyber-label"><span class="label-accent">[CATEGORY]</span> КАТЕГОРИЯ КИБЕРДЕКА</label>
+            <select class="cyber-select" id="skillCategoryInput">
+              <option value="productivity">⚡ Продуктивность</option>
+              <option value="utilities">🛠️ Утилиты</option>
+              <option value="fun">🎲 Развлечения & Braindance</option>
+              <option value="development">💻 Netrunner / Разработка</option>
+            </select>
+          </div>
+          <div class="form-col">
+            <label class="cyber-label"><span class="label-accent">[ICON]</span> ИКОНКА (EMOJI)</label>
+            <input type="text" class="cyber-input" id="skillIconInput" placeholder="⚡" value="⚡">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="cyber-label"><span class="label-accent">[DESC]</span> ОПИСАНИЕ МОДУЛЯ</label>
+          <input type="text" class="cyber-input" id="skillDescInput" placeholder="Что делает этот модуль при активации?">
+        </div>
+
+        <div class="form-group">
+          <label class="cyber-label"><span class="label-accent">[TRIGGER]</span> ШАБЛОН ТРИГГЕРА (REGEX / КЛЮЧЕВАЯ ФРАЗА)</label>
+          <div class="trigger-input-wrap">
+            <input type="text" class="cyber-input" id="skillPatternInput" placeholder="^(?:сандевистан|speed\s+up|ускорение)">
+          </div>
+          <div class="preset-chips">
+            <span class="preset-label">БЫСТРЫЕ ШАБЛОНЫ:</span>
+            <button type="button" class="preset-btn" data-pattern="^(?:привет|ку|хай|здарова)\s+капри" data-reply="Здорово, choom! Кибердек на связи и готов к работе.">👋 Приветствие</button>
+            <button type="button" class="preset-btn" data-pattern="^(?:статус|пинг|чек)\s+капри" data-reply="Все системы в норме: 120 FPS, риск киберпсихоза минимален.">📊 Статус</button>
+            <button type="button" class="preset-btn" data-pattern="^(?:монетка|орел или решка)" data-reply="Подбросила евродоллар: {result}! Фортуна Найт-Сити с тобой.">🪙 Монетка</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="cyber-label"><span class="label-accent">[RESPONSE]</span> ШАБЛОН ОТВЕТА КАПРИ</label>
+          <textarea class="cyber-textarea" id="skillReplyInput" rows="3" placeholder="Сандевистан включен на полную катушку! 120 FPS без задержек, choom."></textarea>
+          <span class="input-hint">Доступны подстановки: <code>{input}</code> (полный запрос пользователя), <code>{match}</code> (первая группа).</span>
+        </div>
+
+        <div class="preview-box">
+          <span class="preview-title">СИМУЛЯЦИЯ РЕАКЦИИ КАПРИ:</span>
+          <div class="preview-chat">
+            <div class="preview-user">&gt; <span id="previewUserText">сандевистан</span></div>
+            <div class="preview-capri">
+              <span class="preview-capri-tag">CAPRI:</span> 
+              <span id="previewCapriText">Сандевистан включен на полную катушку! 120 FPS без задержек, choom.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="cyber-btn btn-ghost" id="cancelModalBtn">ОТМЕНА</button>
+        <button class="cyber-btn btn-yellow" id="saveCustomSkillBtn">
+          <span class="btn-cut"></span>
+          <span class="btn-text">⚡ АКТИВИРОВАТЬ И ПРОШИТЬ В БИОЧИП</span>
+        </button>
+      </div>
+
+      <div class="hazard-stripe bottom"></div>
+    </div>
+  </div>
+
+  <!-- Cyberpunk Footer -->
+  <footer class="cyber-footer">
+    <div class="footer-stripes"></div>
+    <div class="footer-inner">
+      <div class="footer-left">
+        <span class="nc-cop">NIGHT CITY POLICE DEPT // REG-47823</span>
+        <p>Capri Construct &bull; Модульный кибернетический интерфейс ассистента.</p>
+      </div>
+      <div class="footer-center">
+        <span class="quote">«STAY WITH ME AT MY HOUSE, OR WE FLATLINE ARASAKA TOGETHER.»</span>
+      </div>
+      <div class="footer-right">
+        <span>LOCAL BRIDGE: <code>http://127.0.0.1:47823</code></span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/marketplace/marketplace.js"></script>
+  <script src="marketplace.js"></script>
+</body>
+</html>
