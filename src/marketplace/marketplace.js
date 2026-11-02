@@ -390,6 +390,8 @@ const skillSearchInput = document.getElementById('skillSearchInput');
 const searchClearBtn = document.getElementById('searchClearBtn');
 const refreshBtn = document.getElementById('refreshBtn');
 const installedCountBadge = document.getElementById('installedCountBadge');
+const cyberpsychosisBar = document.getElementById('cyberpsychosisBar');
+const cyberpsychosisVal = document.getElementById('cyberpsychosisVal');
 
 // Capri Mascot Elements
 const capriAvatarContainer = document.getElementById('capriAvatarContainer');
@@ -498,6 +500,81 @@ async function loadSkillsCatalog() {
   renderCatalog();
 }
 
+// --- Cyberpsychosis Dynamic Risk Engine ---
+function updateCyberpsychosis() {
+  const totalCount = skillsCatalog.length;
+  const activeCount = skillsCatalog.filter(s => s.installed && s.enabled).length;
+
+  if (installedCountBadge) {
+    installedCountBadge.textContent = `${activeCount} / ${totalCount} СЛОТОВ`;
+  }
+
+  if (!cyberpsychosisBar || !cyberpsychosisVal) return;
+
+  if (totalCount === 0) {
+    cyberpsychosisBar.style.width = '0%';
+    cyberpsychosisBar.className = 'stat-bar safe';
+    cyberpsychosisVal.textContent = '0.0% [SAFE]';
+    cyberpsychosisVal.className = 'stat-val highlight-green';
+    return;
+  }
+
+  let cache = {};
+  try {
+    cache = JSON.parse(localStorage.getItem('capri_cyberpsychosis_cache') || '{}');
+  } catch {}
+
+  const key = `risk_${activeCount}_of_${totalCount}`;
+  let val = cache[key];
+
+  if (val === undefined || typeof val !== 'number') {
+    if (activeCount === 0) {
+      val = 0.4;
+    } else if (activeCount === totalCount) {
+      // User requirement: "если все - то бралось число от 80 до 100 рандомное... постоянное"
+      val = Number((80.0 + Math.random() * 19.5).toFixed(1)); // 80.0 to 99.5
+    } else {
+      // Dynamic scaling across intermediate active slot counts
+      const ratio = activeCount / totalCount;
+      const base = ratio * 76.0;
+      const jitter = (Math.random() * 4.0) - 2.0; // +/- 2%
+      val = Number(Math.max(4.0, Math.min(79.0, base + jitter)).toFixed(1));
+    }
+    cache[key] = val;
+    try {
+      localStorage.setItem('capri_cyberpsychosis_cache', JSON.stringify(cache));
+    } catch {}
+  }
+
+  cyberpsychosisBar.style.width = `${Math.min(100, Math.max(0, val))}%`;
+
+  let statusTag = '';
+  let statusClass = '';
+  let barClass = '';
+
+  if (val < 25) {
+    statusTag = `${val}% [SAFE]`;
+    statusClass = 'highlight-green';
+    barClass = 'stat-bar safe';
+  } else if (val < 50) {
+    statusTag = `${val}% [STABLE]`;
+    statusClass = 'highlight-cyan';
+    barClass = 'stat-bar nominal';
+  } else if (val < 75) {
+    statusTag = `${val}% [WARNING]`;
+    statusClass = 'highlight-yellow';
+    barClass = 'stat-bar warning';
+  } else {
+    statusTag = `${val}% [CYBERPSYCHOSIS]`;
+    statusClass = 'highlight-pink';
+    barClass = 'stat-bar danger';
+  }
+
+  cyberpsychosisVal.textContent = statusTag;
+  cyberpsychosisVal.className = `stat-val ${statusClass}`;
+  cyberpsychosisBar.className = barClass;
+}
+
 // --- Badge Counters ---
 function updateCategoryBadges() {
   const counts = { all: skillsCatalog.length, utilities: 0, productivity: 0, fun: 0, development: 0 };
@@ -515,7 +592,7 @@ function updateCategoryBadges() {
   document.getElementById('catCountFun').textContent = counts.fun;
   document.getElementById('catCountDev').textContent = counts.development;
 
-  installedCountBadge.textContent = `${installedCount} / ${skillsCatalog.length} СЛОТОВ`;
+  updateCyberpsychosis();
 }
 
 // --- Render Catalog Grid ---
@@ -617,11 +694,20 @@ window.handleToggle = async function(id, enable) {
   const s = skillsCatalog.find(item => item.id === id);
   if (s) s.enabled = enable;
   saveLocalState();
+  updateCategoryBadges();
   renderCatalog();
-  showCapriSpeech(enable 
-    ? `«Модуль #${id} активирован в твоем кибердеке. Готова принимать запросы, choom!»` 
-    : `«Модуль #${id} временно отключен. Освободила вычислительные циклы.»`
-  );
+
+  const totalCount = skillsCatalog.length;
+  const activeCount = skillsCatalog.filter(item => item.installed && item.enabled).length;
+
+  if (activeCount === totalCount && totalCount > 0) {
+    showCapriSpeech(`«Внимание, choom! Забиты ВСЕ ${totalCount} слотов хрома! Риск киберпсихоза критический (${cyberpsychosisVal?.textContent || 'MAX'}), Сандевистан гудит на пределе!»`);
+  } else {
+    showCapriSpeech(enable 
+      ? `«Модуль #${id} активирован в твоем кибердеке. Готова принимать запросы, choom!»` 
+      : `«Модуль #${id} временно отключен. Освободила вычислительные циклы.»`
+    );
+  }
 };
 
 // --- Install Skill ---

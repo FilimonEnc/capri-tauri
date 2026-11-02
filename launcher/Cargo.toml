@@ -7,4 +7,4 @@ edition = "2021"
 windows-sys = { version = "0.59", features = ["Win32_System_Threading"] }
 
 [build-dependencies]
-tauri-winres = "0.1"
+winres = "0.1"

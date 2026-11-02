@@ -351,17 +351,46 @@ body.cyber-body {
   height: 100%;
   background: var(--cp-cyan);
   box-shadow: 0 0 8px var(--cp-cyan);
+  transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.4s ease, box-shadow 0.4s ease;
+}
+
+.stat-bar.safe {
+  background: var(--cp-green);
+  box-shadow: 0 0 10px var(--cp-green-glow);
+}
+
+.stat-bar.nominal {
+  background: var(--cp-cyan);
+  box-shadow: 0 0 10px var(--cp-cyan-glow);
+}
+
+.stat-bar.warning {
+  background: var(--cp-yellow);
+  box-shadow: 0 0 10px var(--cp-yellow-glow);
 }
 
 .stat-bar.danger {
-  background: var(--cp-green);
-  box-shadow: 0 0 8px var(--cp-green);
+  background: var(--cp-magenta);
+  box-shadow: 0 0 14px var(--cp-magenta);
+  animation: pulse-danger 0.8s infinite alternate ease-in-out;
+}
+
+@keyframes pulse-danger {
+  0% { box-shadow: 0 0 6px var(--cp-magenta-glow); filter: brightness(1); }
+  100% { box-shadow: 0 0 18px var(--cp-magenta); filter: brightness(1.3); }
 }
 
 .stat-val {
   font-weight: 700;
-  min-width: 80px;
+  min-width: 95px;
   text-align: right;
+  transition: color 0.3s ease;
+}
+
+.highlight-pink {
+  color: var(--cp-magenta);
+  font-weight: 700;
+  text-shadow: 0 0 10px var(--cp-magenta-glow);
 }
 
 .hero-actions {
