@@ -662,7 +662,12 @@ export class Chat {
       });
       return undefined;
     }
-    if (done) return this.addLine(answer, done.line, done.face);
+    if (done) {
+      if (answer && done.line && (answer.includes(done.line) || answer.toLowerCase().includes('яндекс музык') || answer.toLowerCase().includes('spotify'))) {
+        return undefined;
+      }
+      return this.addLine(answer, done.line, done.face);
+    }
     if (asked?.kind === 'remind') return undefined; // no time said: her answer asks when
     if (asked?.kind === 'close') return this.offerClose(asked.name, answer);
     if (asked && asked.kind !== 'open') return undefined; // music that didn't work out: nothing more to offer

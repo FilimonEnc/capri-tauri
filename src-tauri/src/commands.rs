@@ -3,7 +3,8 @@ use std::fs;
 use std::mem::size_of;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Manager, WebviewWindow};
 use windows_sys::Win32::Foundation::{FILETIME, POINT};
@@ -22,6 +23,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
 static PREV_IDLE: AtomicU64 = AtomicU64::new(0);
 static PREV_KERNEL: AtomicU64 = AtomicU64::new(0);
 static PREV_USER: AtomicU64 = AtomicU64::new(0);
+static LAST_PLAY: Mutex<Option<(String, Instant, Value)>> = Mutex::new(None);
 
 fn ft_to_u64(ft: &FILETIME) -> u64 {
     ((ft.dwHighDateTime as u64) << 32) | (ft.dwLowDateTime as u64)
@@ -256,10 +258,133 @@ fn url_encode(input: &str) -> String {
     out
 }
 
-pub fn play_yandex_music(query: &str) -> Value {
-    let q_trimmed = query.trim();
-    let q_lower = q_trimmed.to_lowercase();
+pub fn sanitize_music_query(query: &str) -> String {
+    let mut q = query.to_string();
 
+    // 1. Strip notes in parentheses / brackets (leaked system/context notes)
+    for pat in &[
+        "(note for you", "(note:", "(instruction", "(system",
+        "[note for you", "[note:", "[instruction", "[system",
+    ] {
+        if let Some(idx) = q.to_lowercase().find(pat) {
+            q = q[..idx].to_string();
+        }
+    }
+
+    // 2. Take only the first non-empty line
+    if let Some(first_line) = q.lines().find(|l| !l.trim().is_empty()) {
+        q = first_line.to_string();
+    }
+
+    let mut trimmed = q.trim().to_string();
+
+    // 3. Remove conversational music prefixes
+    let lower = trimmed.to_lowercase();
+    let prefixes = [
+        "включи мне пожалуйста", "поставь мне пожалуйста", "запусти мне пожалуйста", "сыграй мне пожалуйста",
+        "включи пожалуйста", "поставь пожалуйста", "запусти пожалуйста", "сыграй пожалуйста",
+        "включи мне", "поставь мне", "запусти мне", "сыграй мне", "вруби мне",
+        "включи песню", "поставь песню", "сыграй песню", "запусти песню", "вруби песню",
+        "включи трек", "поставь трек", "сыграй трек", "запусти трек", "вруби трек",
+        "включи музыку", "поставь музыку", "сыграй музыку", "запусти музыку", "вруби музыку",
+        "включи", "поставь", "сыграй", "запусти", "вруби",
+        "play song", "play track", "play music", "play", "put on"
+    ];
+
+    for prefix in &prefixes {
+        if lower.starts_with(prefix) {
+            trimmed = trimmed[prefix.len()..].trim().to_string();
+            break;
+        }
+    }
+
+    let lower2 = trimmed.to_lowercase();
+    let music_words = [
+        "радиостанцию", "радио", "мою волну", "моя волна", "волну", "волна",
+        "песню", "трек", "музыку", "композицию", "song", "track"
+    ];
+    for mw in &music_words {
+        if lower2.starts_with(mw) {
+            trimmed = trimmed[mw.len()..].trim().to_string();
+            break;
+        }
+    }
+
+    let lower3 = trimmed.to_lowercase();
+    let prep_words = ["из", "от", "про", "группы", "исполнителя", "by", "from", "of"];
+    for pw in &prep_words {
+        if lower3.starts_with(pw) {
+            trimmed = trimmed[pw.len()..].trim().to_string();
+            break;
+        }
+    }
+
+    // 4. Strip quotes and punctuation
+    trimmed.trim_matches(|c: char| {
+        c.is_ascii_punctuation() || c == '«' || c == '»' || c == '"' || c == '\'' || c == '“' || c == '”'
+    }).trim().to_string()
+}
+
+pub fn get_yandex_music_exe() -> Option<PathBuf> {
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        let path = PathBuf::from(local).join("Programs").join("YandexMusic").join("Яндекс Музыка.exe");
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    if let Ok(prog) = std::env::var("PROGRAMFILES") {
+        let path = PathBuf::from(prog).join("YandexMusic").join("Яндекс Музыка.exe");
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    if let Ok(prog86) = std::env::var("ProgramFiles(x86)") {
+        let path = PathBuf::from(prog86).join("YandexMusic").join("Яндекс Музыка.exe");
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    None
+}
+
+pub fn launch_yandex_music(deep_target: &str, web_target: &str) {
+    let mut launched = false;
+
+    // 1. Prioritize native Windows desktop app executable directly (avoids WSA or broken protocol bindings)
+    if let Some(exe) = get_yandex_music_exe() {
+        if std::process::Command::new(&exe)
+            .arg(deep_target)
+            .spawn()
+            .is_ok()
+        {
+            launched = true;
+        }
+    }
+
+    // 2. Fallback to protocol open (ShellExecute)
+    if !launched && open::that(deep_target).is_ok() {
+        launched = true;
+    }
+
+    // 3. Fallback to web player in browser
+    if !launched {
+        let _ = open::that(web_target);
+    }
+}
+
+pub fn play_yandex_music(query: &str) -> Value {
+    let clean = sanitize_music_query(query);
+
+    // Debounce duplicate calls within 2.5 seconds (e.g. from both doMusic and chat_send)
+    if let Ok(guard) = LAST_PLAY.lock() {
+        if let Some((ref last_q, last_time, ref res)) = *guard {
+            if last_q == &clean && last_time.elapsed().as_millis() < 2500 {
+                return res.clone();
+            }
+        }
+    }
+
+    let q_lower = clean.to_lowercase();
     let is_radio = q_lower.is_empty()
         || q_lower.contains("радио")
         || q_lower.contains("волн")
@@ -269,34 +394,34 @@ pub fn play_yandex_music(query: &str) -> Value {
         || q_lower == "что-нибудь";
 
     if is_radio {
-        let deep = "yandexmusic://home";
-        let web = "https://music.yandex.ru/home";
-        if open::that(deep).is_err() {
-            let _ = open::that(web);
-        }
+        launch_yandex_music("yandexmusic://home", "https://music.yandex.ru/home");
         std::thread::spawn(|| {
-            std::thread::sleep(std::time::Duration::from_millis(1500));
+            std::thread::sleep(std::time::Duration::from_millis(2200));
             media("play".to_string());
         });
-        return json!({
+        let res = json!({
             "ok": true,
             "player": "Яндекс Музыка",
             "title": "Моя волна (Радио)",
             "artist": "Радиостанция"
         });
+        if let Ok(mut guard) = LAST_PLAY.lock() {
+            *guard = Some((clean, Instant::now(), res.clone()));
+        }
+        return res;
     }
 
-    let encoded = url_encode(q_trimmed);
+    let encoded = url_encode(&clean);
     let api_url = format!("https://api.music.yandex.net/search?text={}&type=all&page=0", encoded);
 
-    let mut found_title = q_trimmed.to_string();
+    let mut found_title = clean.clone();
     let mut found_artists = "Яндекс Музыка".to_string();
     let mut target_deep = format!("yandexmusic://search?text={}", encoded);
     let mut target_web = format!("https://music.yandex.ru/search?text={}", encoded);
 
     if let Ok(res) = ureq::get(&api_url)
         .set("User-Agent", "YandexMusic/2024")
-        .timeout(std::time::Duration::from_millis(2500))
+        .timeout(std::time::Duration::from_millis(3000))
         .call()
     {
         if let Ok(val) = res.into_json::<Value>() {
@@ -350,46 +475,51 @@ pub fn play_yandex_music(query: &str) -> Value {
         }
     }
 
-    if open::that(&target_deep).is_err() {
-        let _ = open::that(&target_web);
-    }
+    launch_yandex_music(&target_deep, &target_web);
 
     std::thread::spawn(|| {
-        std::thread::sleep(std::time::Duration::from_millis(1500));
+        std::thread::sleep(std::time::Duration::from_millis(2200));
         media("play".to_string());
     });
 
-    json!({
+    let res = json!({
         "ok": true,
         "player": "Яндекс Музыка",
         "title": found_title,
         "artist": found_artists
-    })
+    });
+
+    if let Ok(mut guard) = LAST_PLAY.lock() {
+        *guard = Some((clean, Instant::now(), res.clone()));
+    }
+
+    res
 }
 
 #[tauri::command]
 pub fn music(query: String, player: Option<String>) -> Value {
+    let clean = sanitize_music_query(&query);
     let target = player.unwrap_or_else(|| {
         let cfg = get_config();
         cfg.get("musicPlayer").and_then(|v| v.as_str()).unwrap_or("yandex").to_string()
     });
 
     match target.to_lowercase().as_str() {
-        "yandex" => play_yandex_music(&query),
+        "yandex" => play_yandex_music(if clean.is_empty() { "радио" } else { &clean }),
         "youtube" => {
-            let enc = url_encode(&query);
+            let enc = url_encode(if clean.is_empty() { &query } else { &clean });
             let web = format!("https://www.youtube.com/results?search_query={}", enc);
             let ok = open::that(web).is_ok();
-            json!({ "ok": ok, "player": "YouTube", "title": query, "artist": "YouTube" })
+            json!({ "ok": ok, "player": "YouTube", "title": clean, "artist": "YouTube" })
         }
         _ => {
-            let enc = url_encode(&query);
+            let enc = url_encode(if clean.is_empty() { &query } else { &clean });
             let deep = format!("spotify:search:{}", enc);
             if open::that(&deep).is_err() {
                 let web = format!("https://open.spotify.com/search/{}", enc);
                 let _ = open::that(web);
             }
-            json!({ "ok": true, "player": "Spotify", "title": query, "artist": "Spotify" })
+            json!({ "ok": true, "player": "Spotify", "title": clean, "artist": "Spotify" })
         }
     }
 }
@@ -655,6 +785,7 @@ pub fn chat_send(request: Value) -> Value {
         .and_then(|c| c.as_str())
         .unwrap_or("Привет, Капри!");
 
+    let clean_query = sanitize_music_query(prompt);
     let lower = prompt.to_lowercase();
 
     // Check if user is asking to play music / radio / track
@@ -662,32 +793,26 @@ pub fn chat_send(request: Value) -> Value {
         || lower.contains("поставь")
         || lower.contains("сыграй")
         || lower.contains("запусти")
+        || lower.contains("вруби")
         || lower.contains("радио")
         || lower.contains("волну")
-        || lower.contains("музыку");
+        || lower.contains("музыку")
+        || lower.starts_with("play ");
 
-    if is_music_req && (lower.contains("радио") || lower.contains("волн") || lower.contains("музык") || lower.contains("песн") || lower.contains("трек") || lower.starts_with("включи") || lower.starts_with("поставь") || lower.starts_with("сыграй") || lower.starts_with("запусти")) {
-        let mut clean = lower.clone();
-        for prefix in &["включи мне пожалуйста", "включи пожалуйста", "поставь пожалуйста", "включи мне", "поставь мне", "включи", "поставь", "сыграй", "запусти"] {
-            if clean.starts_with(prefix) {
-                clean = clean[prefix.len()..].trim().to_string();
-                break;
-            }
-        }
-        for prefix in &["радиостанцию", "радио", "мою волну", "волну", "песню", "трек", "музыку", "композицию"] {
-            if clean.starts_with(prefix) {
-                clean = clean[prefix.len()..].trim().to_string();
-                break;
-            }
-        }
-        for prefix in &["из", "от", "про", "группы", "исполнителя"] {
-            if clean.starts_with(prefix) {
-                clean = clean[prefix.len()..].trim().to_string();
-                break;
-            }
-        }
-
-        let res = play_yandex_music(if clean.is_empty() { "радио" } else { &clean });
+    if is_music_req && (
+        lower.contains("радио")
+            || lower.contains("волн")
+            || lower.contains("музык")
+            || lower.contains("песн")
+            || lower.contains("трек")
+            || lower.starts_with("включи")
+            || lower.starts_with("поставь")
+            || lower.starts_with("сыграй")
+            || lower.starts_with("запусти")
+            || lower.starts_with("вруби")
+            || lower.starts_with("play ")
+    ) {
+        let res = play_yandex_music(if clean_query.is_empty() { "радио" } else { &clean_query });
         let title = res.get("title").and_then(|t| t.as_str()).unwrap_or("Моя волна");
         let artist = res.get("artist").and_then(|a| a.as_str()).unwrap_or("");
 
@@ -712,6 +837,15 @@ pub fn chat_send(request: Value) -> Value {
 
     // Gemini API integration
     if provider == "gemini" && !api_key.is_empty() {
+        let gemini_prompt = {
+            let mut p = prompt.to_string();
+            for pat in &["(note for you", "(note:"] {
+                if let Some(idx) = p.to_lowercase().find(pat) {
+                    p = p[..idx].trim().to_string();
+                }
+            }
+            if p.is_empty() { prompt.to_string() } else { p }
+        };
         let gemini_url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={}",
             api_key
@@ -720,7 +854,7 @@ pub fn chat_send(request: Value) -> Value {
             "contents": [
                 {
                     "role": "user",
-                    "parts": [{ "text": prompt }]
+                    "parts": [{ "text": gemini_prompt }]
                 }
             ],
             "systemInstruction": {
