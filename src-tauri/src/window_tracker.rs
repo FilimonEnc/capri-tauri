@@ -183,7 +183,6 @@ impl WindowTracker {
             let mut last_breach_check = std::time::Instant::now();
             let mut breach_was_active = false;
             let mut breach_missed_count: u32 = 0;
-            let mut last_solution_codes: serde_json::Value = serde_json::Value::Null;
 
             while r.load(Ordering::Relaxed) {
                 // 1. Cursor position tracking in exact CSS pixels
@@ -314,47 +313,50 @@ impl WindowTracker {
                 let now_inst = std::time::Instant::now();
                 if now_inst.duration_since(last_breach_check) >= Duration::from_millis(check_interval_ms) {
                     last_breach_check = now_inst;
-                    if let Some(solution) = crate::cyberpunk::scan_and_solve_breach(win_x, win_y, win_w, win_h, sf) {
-                        breach_missed_count = 0;
-                        let codes = solution["codes"].clone();
-                        if !breach_was_active || codes != last_solution_codes {
-                            last_solution_codes = codes;
+
+                    if !breach_was_active {
+                        // 1. Initial detection of breach protocol: compute optimal route ONCE
+                        if let Some(solution) = crate::cyberpunk::scan_and_solve_breach(win_x, win_y, win_w, win_h, sf) {
+                            breach_missed_count = 0;
                             breach_was_active = true;
                             let _ = app.emit("cyberpunk:breach_detected", solution);
-                        }
 
-                        // Proactively enforce HWND_TOPMOST above full-screen DirectX 12 game
-                        if !self_hwnd.is_null() {
-                            unsafe {
-                                SetWindowPos(
-                                    self_hwnd,
-                                    HWND_TOPMOST,
-                                    0, 0, 0, 0,
-                                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
-                                );
+                            // Proactively enforce HWND_TOPMOST above full-screen DirectX 12 game
+                            if !self_hwnd.is_null() {
+                                unsafe {
+                                    SetWindowPos(
+                                        self_hwnd,
+                                        HWND_TOPMOST,
+                                        0, 0, 0, 0,
+                                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
+                                    );
+                                }
                             }
                         }
-                    } else if breach_was_active {
-                        breach_missed_count += 1;
-
-                        // Keep Capri topmost during brief debounce window
-                        if !self_hwnd.is_null() {
-                            unsafe {
-                                SetWindowPos(
-                                    self_hwnd,
-                                    HWND_TOPMOST,
-                                    0, 0, 0, 0,
-                                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
-                                );
-                            }
-                        }
-
-                        // Clear promptly after missed checks of not seeing breach matrix
-                        if breach_missed_count >= missed_limit {
-                            breach_was_active = false;
+                    } else {
+                        // 2. Breach session is ACTIVE:
+                        // Keep the route LOCKED! Do NOT recalculate or mutate the route while user is clicking cells!
+                        let is_visible = crate::cyberpunk::is_breach_matrix_visible(win_x, win_y, win_w, win_h);
+                        if is_visible {
                             breach_missed_count = 0;
-                            last_solution_codes = serde_json::Value::Null;
-                            let _ = app.emit("cyberpunk:breach_cleared", json!({ "cleared": true }));
+                            // Keep Capri topmost over game
+                            if !self_hwnd.is_null() {
+                                unsafe {
+                                    SetWindowPos(
+                                        self_hwnd,
+                                        HWND_TOPMOST,
+                                        0, 0, 0, 0,
+                                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
+                                    );
+                                }
+                            }
+                        } else {
+                            breach_missed_count += 1;
+                            if breach_missed_count >= missed_limit {
+                                breach_was_active = false;
+                                breach_missed_count = 0;
+                                let _ = app.emit("cyberpunk:breach_cleared", json!({ "cleared": true }));
+                            }
                         }
                     }
                 }

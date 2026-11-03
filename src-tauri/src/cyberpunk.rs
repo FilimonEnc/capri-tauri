@@ -332,7 +332,7 @@ fn score_matched(matched: &[usize], w3: i32, w2: i32, w1: i32) -> i32 {
 }
 
 fn solve_matrix<'a>(
-    matrix: &'a [[&'a str; 6]; 6],
+    matrix: &'a [Vec<&'a str>],
     sequences: &'a [Vec<&'a str>],
     buffer_size: usize,
     w3: i32,
@@ -342,14 +342,19 @@ fn solve_matrix<'a>(
     let mut best_score = -1;
     let mut best_path = Vec::new();
     let mut best_matched = Vec::new();
+    let n = matrix.len();
+    if n == 0 {
+        return (best_path, best_matched);
+    }
+    let m = matrix[0].len();
 
     fn dfs<'a>(
         r: usize,
         c: usize,
         is_horiz: bool,
         path: &mut Vec<(usize, usize)>,
-        visited: &mut [[bool; 6]; 6],
-        matrix: &'a [[&'a str; 6]; 6],
+        visited: &mut Vec<Vec<bool>>,
+        matrix: &'a [Vec<&'a str>],
         sequences: &'a [Vec<&'a str>],
         buffer_size: usize,
         best_score: &mut i32,
@@ -378,14 +383,17 @@ fn solve_matrix<'a>(
             return;
         }
 
+        let n_rows = matrix.len();
+        let n_cols = matrix[0].len();
+
         if is_horiz {
-            for nr in 0..6 {
+            for nr in 0..n_rows {
                 if nr != r && !visited[nr][c] {
                     dfs(nr, c, false, path, visited, matrix, sequences, buffer_size, best_score, best_path, best_matched, w3, w2, w1);
                 }
             }
         } else {
-            for nc in 0..6 {
+            for nc in 0..n_cols {
                 if nc != c && !visited[r][nc] {
                     dfs(r, nc, true, path, visited, matrix, sequences, buffer_size, best_score, best_path, best_matched, w3, w2, w1);
                 }
@@ -398,8 +406,8 @@ fn solve_matrix<'a>(
 
     // 1. Standard search starting from Row 0 (can use filler steps to reach anywhere)
     let mut path = Vec::with_capacity(buffer_size);
-    let mut visited = [[false; 6]; 6];
-    for start_c in 0..6 {
+    let mut visited = vec![vec![false; m]; n];
+    for start_c in 0..m {
         dfs(
             0,
             start_c,
@@ -418,13 +426,12 @@ fn solve_matrix<'a>(
         );
     }
 
-    // 2. Also search if the best sequence starts in ANY other row (rows 1..6)
-    // Bridged via 1 navigation move (0, start_c) in row 0 down to (start_r, start_c):
+    // 2. Also search if the best sequence starts in ANY other row (rows 1..n)
     if buffer_size > 1 {
-        for start_r in 1..6 {
-            for start_c in 0..6 {
+        for start_r in 1..n {
+            for start_c in 0..m {
                 let mut bridged_path = vec![(0, start_c)];
-                let mut b_visited = [[false; 6]; 6];
+                let mut b_visited = vec![vec![false; m]; n];
                 b_visited[0][start_c] = true;
                 dfs(
                     start_r,
@@ -449,9 +456,29 @@ fn solve_matrix<'a>(
     (best_path, best_matched)
 }
 
+pub fn is_breach_matrix_visible(win_x: i32, win_y: i32, win_w: i32, win_h: i32) -> bool {
+    if let Some(buf) = capture_screen(win_x, win_y, win_w, win_h) {
+        if detect_header(&buf, win_w, win_h).is_some() {
+            return true;
+        }
+    }
+    if win_x != 0 || win_y != 0 {
+        if let Some(buf) = capture_screen(0, 0, 2560, 1440) {
+            if detect_header(&buf, 2560, 1440).is_some() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64) -> Option<Value> {
     let buf = capture_screen(win_x, win_y, win_w, win_h)?;
-    let (hx1, hy1, _hw, _hh) = detect_header(&buf, win_w, win_h)?;
+    let (hx1, hy1, hw, _hh) = detect_header(&buf, win_w, win_h)?;
+
+    let scale_x = win_w as f64 / 2560.0;
+    let norm_hw = hw as f64 / scale_x;
+    let n = if norm_hw < 980.0 { 5 } else if norm_hw > 1300.0 { 7 } else { 6 };
 
     let mat_1c = get_template_bytes("mat_1C.bin", MAT_1C);
     let mat_e9 = get_template_bytes("mat_E9.bin", MAT_E9);
@@ -485,31 +512,23 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         normalize(&seq_ff),
     ];
 
-    // Grid coordinates
-    // Based on header position
-    let row_ys = [
-        hy1 + 113,
-        hy1 + 199,
-        hy1 + 284,
-        hy1 + 370,
-        hy1 + 455,
-        hy1 + 541,
-    ];
-    let col_xs = [
-        hx1 + 210,
-        hx1 + 295,
-        hx1 + 380,
-        hx1 + 466,
-        hx1 + 551,
-        hx1 + 636,
-    ];
+    // Centered grid coordinates
+    let mut row_ys = Vec::with_capacity(n);
+    let mut col_xs = Vec::with_capacity(n);
+    let half_n = (n as f64 - 1.0) / 2.0;
+    for i in 0..n {
+        let r_offset = ((i as f64 - half_n) * 85.5 * scale_x).round() as i32;
+        let c_offset = ((i as f64 - half_n) * 85.5 * scale_x).round() as i32;
+        row_ys.push(hy1 + (327.0 * scale_x).round() as i32 + r_offset);
+        col_xs.push(hx1 + (423.0 * scale_x).round() as i32 + c_offset);
+    }
 
-    let mut matrix = [["1C"; 6]; 6];
-    let mut matrix_coords = [[(0i32, 0i32); 6]; 6];
+    let mut matrix = vec![vec!["1C"; n]; n];
+    let mut matrix_coords = vec![vec![(0i32, 0i32); n]; n];
 
-    for r in 0..6 {
+    for r in 0..n {
         let cy = row_ys[r];
-        for c in 0..6 {
+        for c in 0..n {
             let cx = col_xs[c];
             // Extract 48x40 patch
             let mut patch = Vec::with_capacity(48 * 40);
@@ -524,9 +543,20 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         }
     }
 
-    // Sequence coordinates
-    let seq_ys = [hy1 + 86, hy1 + 166, hy1 + 246];
-    let seq_xs = [hx1 + 1014, hx1 + 1069, hx1 + 1125, hx1 + 1181];
+    // Sequence coordinates: support up to 4 daemon rows and up to 5 tokens each
+    let seq_ys = [
+        hy1 + (86.0 * scale_x).round() as i32,
+        hy1 + (166.0 * scale_x).round() as i32,
+        hy1 + (246.0 * scale_x).round() as i32,
+        hy1 + (326.0 * scale_x).round() as i32,
+    ];
+    let seq_xs = [
+        hx1 + (1014.0 * scale_x).round() as i32,
+        hx1 + (1069.0 * scale_x).round() as i32,
+        hx1 + (1125.0 * scale_x).round() as i32,
+        hx1 + (1181.0 * scale_x).round() as i32,
+        hx1 + (1237.0 * scale_x).round() as i32,
+    ];
 
     let mut sequences: Vec<Vec<&str>> = Vec::new();
     for &gy in &seq_ys {
@@ -612,6 +642,7 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         "Обычная добыча данных (Eurodollars)",
         "Продвинутая добыча данных (Eurodollars + Components)",
         "Высокоуровневая добыча данных (Quickhack Blueprints)",
+        "Добыча данных (Копии вирусов / Документация)",
     ];
     let matched_names: Vec<&str> = matched.iter().map(|&idx| daemon_names.get(idx).unwrap_or(&"Daemon")).copied().collect();
 

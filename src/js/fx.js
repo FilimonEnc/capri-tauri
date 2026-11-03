@@ -603,10 +603,42 @@ export class FxLayer {
       life: 600000,
       nodes,
       daemons,
+      currentStep: 0,
       born: performance.now(),
     });
     this._activeBreach = item;
     return item;
+  }
+
+  onBreachClick(cx, cy) {
+    if (!this._activeBreach || !this._activeBreach.nodes) return;
+    const item = this._activeBreach;
+    const nodes = item.nodes;
+    const cur = item.currentStep || 0;
+    if (cur >= nodes.length) return;
+
+    // Check click against active target and upcoming nodes
+    for (let i = cur; i < nodes.length; i++) {
+      const node = nodes[i];
+      const dist = Math.hypot(cx - node.x, cy - node.y);
+      if (dist <= 65) {
+        // Player clicked the expected step!
+        item.currentStep = i + 1;
+        this.sparkle(node.x, node.y, 24, '#e9ff00', '#00f0ff');
+        if (item.currentStep >= nodes.length) {
+          window.capriApp?.panel?.say?.({
+            kind: 'info',
+            face: 'smug',
+            line: 'Все шаги выполнены! Демоны отправлены в сеть.',
+            hold: 3500,
+          });
+          window.capriApp?.voice?.play?.('star');
+        } else {
+          window.capriApp?.voice?.play?.('pop');
+        }
+        break;
+      }
+    }
   }
 
   clearBreachRoute() {
@@ -1723,6 +1755,7 @@ export class FxLayer {
         const frame = Math.floor((now - it.born) / FRAME_MS);
         const nodes = it.nodes;
         if (!nodes || nodes.length === 0) break;
+        const curStep = it.currentStep || 0;
 
         ctx.save();
         ctx.lineJoin = 'miter';
@@ -1734,52 +1767,75 @@ export class FxLayer {
           const len = Math.hypot(to.x - from.x, to.y - from.y);
           if (len < 5) continue;
 
-          // Electric jagged lightning path
           const pts = this.jag(from, to, Math.min(18, Math.max(7, len * 0.05)), true);
+          const isDoneSeg = i < curStep - 1;
+          const isActiveSeg = i === curStep - 1 || (curStep === 0 && i === 0);
 
-          // Multi-layer neon cyberpunk stroke:
-          // Layer 1: Electric Cyan outer aura
-          this.stroke(pts, '#00f0ff', 6, -1, 1);
-          // Layer 2: Neon Yellow cyber energy
-          this.stroke(pts, '#e9ff00', 3.5);
-          // Layer 3: Hot white lightning core
-          this.stroke(pts, '#ffffff', 1.5);
+          if (isDoneSeg) {
+            // Already passed segment: calm subdued green/cyan
+            ctx.save();
+            ctx.globalAlpha = 0.35;
+            this.stroke(pts, '#00ff88', 2.5);
+            ctx.restore();
+          } else if (isActiveSeg) {
+            // Active segment leading to next target: intense surge
+            this.stroke(pts, '#00f0ff', 6, -1, 1);
+            this.stroke(pts, '#e9ff00', 3.5);
+            this.stroke(pts, '#ffffff', 1.8);
 
-          // Electric branching forks
-          if (frame % 2 === 0) {
-            const [fx, fy] = pts[1 + Math.floor(rand(0, pts.length - 2))];
-            const a = Math.atan2(to.y - from.y, to.x - from.x) + rand(-1.2, 1.2);
-            const l = rand(15, 40);
-            const fork = this.jag({ x: fx, y: fy }, { x: fx + Math.cos(a) * l, y: fy + Math.sin(a) * l }, 6);
-            this.stroke(fork, '#00f0ff', 2.5);
-            this.stroke(fork, '#ffffff', 0.8);
+            if (frame % 2 === 0) {
+              const [fx, fy] = pts[1 + Math.floor(rand(0, pts.length - 2))];
+              const a = Math.atan2(to.y - from.y, to.x - from.x) + rand(-1.2, 1.2);
+              const l = rand(15, 40);
+              const fork = this.jag({ x: fx, y: fy }, { x: fx + Math.cos(a) * l, y: fy + Math.sin(a) * l }, 6);
+              this.stroke(fork, '#00f0ff', 2.5);
+              this.stroke(fork, '#ffffff', 0.8);
+            }
+
+            const travelT = ((now - it.born) * 0.0022 + i * 0.3) % 1;
+            const pulsePt = this.along(pts, travelT);
+            this.sparkle(pulsePt.x, pulsePt.y, 12, '#ffffff', '#e9ff00');
+          } else {
+            // Upcoming segment: clean neon cyan
+            this.stroke(pts, '#00f0ff', 4, -1, 1);
+            this.stroke(pts, '#ffffff', 1.0);
           }
-
-          // Traveling energy pulse along the wire
-          const travelT = ((now - it.born) * 0.0018 + i * 0.3) % 1;
-          const pulsePt = this.along(pts, travelT);
-          this.sparkle(pulsePt.x, pulsePt.y, 10, '#ffffff', '#00f0ff');
         }
 
         // 2. Draw HUD reticles and Step badges at each node
         for (let i = 0; i < nodes.length; i++) {
           const node = nodes[i];
-          const isStart = i === 0;
+          const isDone = i < curStep;
+          const isNext = i === curStep;
           const isEnd = i === nodes.length - 1;
 
-          // Pulsing radius
-          const pulse = (Math.sin(now * 0.008 + i) + 1) * 0.5; // 0..1
-          const boxW = 54 + pulse * 4;
-          const boxH = 40 + pulse * 2;
-
           // Corner brackets
-          const color = isStart ? '#e9ff00' : (isEnd ? '#ff2152' : '#00f0ff');
+          let color = '#00f0ff';
+          let boxW = 54;
+          let boxH = 40;
+          let alpha = 0.85;
+
+          if (isDone) {
+            color = '#00ff88';
+            alpha = 0.40;
+          } else if (isNext) {
+            color = '#e9ff00';
+            const pulse = (Math.sin(now * 0.012) + 1) * 0.5;
+            boxW = 56 + pulse * 8;
+            boxH = 42 + pulse * 5;
+            alpha = 1.0;
+          } else if (isEnd) {
+            color = '#ff2152';
+          }
+
+          ctx.save();
+          ctx.globalAlpha = alpha;
           ctx.strokeStyle = color;
-          ctx.lineWidth = 2.5;
+          ctx.lineWidth = isNext ? 3.0 : 2.0;
 
           const hw = boxW / 2;
           const hh = boxH / 2;
-          const blen = 12;
+          const blen = isNext ? 14 : 10;
 
           // Top-left
           ctx.beginPath();
@@ -1800,30 +1856,60 @@ export class FxLayer {
           ctx.lineTo(node.x + hw, node.y + hh - blen);
           ctx.stroke();
 
-          // Step badge: floating circle or diamond above the cell
-          const badgeY = node.y - hh - 12;
-          ctx.fillStyle = '#14101c';
-          ctx.beginPath();
-          ctx.arc(node.x, badgeY, 11, 0, Math.PI * 2);
-          ctx.fill();
+          // Step badge above the cell
+          const badgeY = node.y - hh - 14;
 
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
+          if (isDone) {
+            ctx.fillStyle = '#14101c';
+            ctx.beginPath();
+            ctx.arc(node.x, badgeY, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
 
-          // Step number text
-          ctx.font = 'bold 12px "Consolas", monospace';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillStyle = color;
-          ctx.fillText(String(node.step || (i + 1)), node.x, badgeY + 1);
+            ctx.font = 'bold 12px "Consolas", monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#00ff88';
+            ctx.fillText('✓', node.x, badgeY + 1);
+          } else if (isNext) {
+            const bPulse = (Math.sin(now * 0.012) + 1) * 0.5;
+            const r = 12 + bPulse * 2;
+            ctx.fillStyle = '#14101c';
+            ctx.beginPath();
+            ctx.arc(node.x, badgeY, r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#e9ff00';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
 
-          // If start node: banner tag
-          if (isStart) {
-            ctx.font = 'bold 10px "Consolas", monospace';
+            ctx.font = 'bold 13px "Consolas", monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
             ctx.fillStyle = '#e9ff00';
-            ctx.fillText('⚡ START', node.x, badgeY - 14);
+            ctx.fillText(String(node.step || (i + 1)), node.x, badgeY + 1);
+
+            // Active guidance pointer above
+            ctx.font = 'bold 11px "Consolas", monospace';
+            ctx.fillStyle = '#e9ff00';
+            ctx.fillText('▼ ЖМИ СЮДА', node.x, badgeY - 14);
+          } else {
+            ctx.fillStyle = '#14101c';
+            ctx.beginPath();
+            ctx.arc(node.x, badgeY, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            ctx.font = 'bold 12px "Consolas", monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = color;
+            ctx.fillText(String(node.step || (i + 1)), node.x, badgeY + 1);
           }
+          ctx.restore();
         }
 
         // 3. Cyberpunk HUD Top Banner

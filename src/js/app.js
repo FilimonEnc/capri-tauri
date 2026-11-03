@@ -531,6 +531,13 @@ async function boot() {
   host.onCyberpunkCleared?.(() => {
     fx.clearBreachRoute();
   });
+
+  // Track step progression along the breach route on global clicks
+  window.addEventListener('mousedown', (e) => {
+    if (fx && fx.onBreachClick) {
+      fx.onBreachClick(e.clientX, e.clientY);
+    }
+  });
   // the windows as they are now: the watcher only speaks again when something changes
   host.windowsNow().then((data) => data && capri.setWindows(data));
 
