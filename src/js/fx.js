@@ -916,7 +916,13 @@ export class FxLayer {
       if (!alive) it.done?.();
       return alive;
     });
-    for (const it of this.items) this.draw(it, (now - it.born) / it.life, dt, now);
+    for (const it of this.items) {
+      try {
+        this.draw(it, (now - it.born) / it.life, dt, now);
+      } catch (err) {
+        console.error('FxLayer draw error:', it.type, err);
+      }
+    }
 
     if (this.items.length) {
       requestAnimationFrame((t) => this.frame(t));
@@ -1824,6 +1830,7 @@ export class FxLayer {
         const first = nodes[0];
         const meta = it.meta || {};
         const mascotW = 105;
+        const mascotH = 166;
         const posX = meta.mascot_x || (meta.seq_header_x ? meta.seq_header_x - 170 : first.x + 580);
         const posY = meta.mascot_y || Math.max(60, first.y - 85);
 
