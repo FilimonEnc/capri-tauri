@@ -1667,26 +1667,28 @@ export default async function execute({ text, match, host, app, fx, voice, panel
             }
         });
         let _ = fs::write(bp_dir.join("config.json"), serde_json::to_string_pretty(&config_json).unwrap_or_default());
-
-        let tpl_dir = bp_dir.join("templates");
-        let _ = fs::create_dir_all(&tpl_dir);
-        let write_tpl = |name: &str, bytes: &[u8]| {
-            let p = tpl_dir.join(name);
-            if !p.exists() {
-                let _ = fs::write(p, bytes);
-            }
-        };
-        write_tpl("mat_1C.bin", include_bytes!("../templates/mat_1C.bin"));
-        write_tpl("mat_E9.bin", include_bytes!("../templates/mat_E9.bin"));
-        write_tpl("mat_55.bin", include_bytes!("../templates/mat_55.bin"));
-        write_tpl("mat_BD.bin", include_bytes!("../templates/mat_BD.bin"));
-        write_tpl("mat_7A.bin", include_bytes!("../templates/mat_7A.bin"));
-        write_tpl("seq_1C.bin", include_bytes!("../templates/seq_1C.bin"));
-        write_tpl("seq_E9.bin", include_bytes!("../templates/seq_E9.bin"));
-        write_tpl("seq_55.bin", include_bytes!("../templates/seq_55.bin"));
-        write_tpl("seq_BD.bin", include_bytes!("../templates/seq_BD.bin"));
-        write_tpl("seq_7A.bin", include_bytes!("../templates/seq_7A.bin"));
     }
+
+    let tpl_dir = bp_dir.join("templates");
+    let _ = fs::create_dir_all(&tpl_dir);
+    let write_tpl = |name: &str, bytes: &[u8]| {
+        let p = tpl_dir.join(name);
+        if !p.exists() {
+            let _ = fs::write(p, bytes);
+        }
+    };
+    write_tpl("mat_1C.bin", include_bytes!("../templates/mat_1C.bin"));
+    write_tpl("mat_E9.bin", include_bytes!("../templates/mat_E9.bin"));
+    write_tpl("mat_55.bin", include_bytes!("../templates/mat_55.bin"));
+    write_tpl("mat_BD.bin", include_bytes!("../templates/mat_BD.bin"));
+    write_tpl("mat_7A.bin", include_bytes!("../templates/mat_7A.bin"));
+    write_tpl("mat_FF.bin", include_bytes!("../templates/mat_FF.bin"));
+    write_tpl("seq_1C.bin", include_bytes!("../templates/seq_1C.bin"));
+    write_tpl("seq_E9.bin", include_bytes!("../templates/seq_E9.bin"));
+    write_tpl("seq_55.bin", include_bytes!("../templates/seq_55.bin"));
+    write_tpl("seq_BD.bin", include_bytes!("../templates/seq_BD.bin"));
+    write_tpl("seq_7A.bin", include_bytes!("../templates/seq_7A.bin"));
+    write_tpl("seq_FF.bin", include_bytes!("../templates/seq_FF.bin"));
 
     // 2. weather
     let weather_dir = base.join("weather");

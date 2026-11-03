@@ -4,7 +4,7 @@ use windows_sys::Win32::Graphics::Gdi::{
     ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, SRCCOPY,
 };
 
-const HEX_NAMES: [&str; 5] = ["1C", "E9", "55", "BD", "7A"];
+const HEX_NAMES: [&str; 6] = ["1C", "E9", "55", "BD", "7A", "FF"];
 
 // Embedded 48x40 matrix templates
 const MAT_1C: &[u8] = include_bytes!("../templates/mat_1C.bin");
@@ -12,6 +12,7 @@ const MAT_E9: &[u8] = include_bytes!("../templates/mat_E9.bin");
 const MAT_55: &[u8] = include_bytes!("../templates/mat_55.bin");
 const MAT_BD: &[u8] = include_bytes!("../templates/mat_BD.bin");
 const MAT_7A: &[u8] = include_bytes!("../templates/mat_7A.bin");
+const MAT_FF: &[u8] = include_bytes!("../templates/mat_FF.bin");
 
 // Embedded 34x26 sequence templates
 const SEQ_1C: &[u8] = include_bytes!("../templates/seq_1C.bin");
@@ -19,6 +20,7 @@ const SEQ_E9: &[u8] = include_bytes!("../templates/seq_E9.bin");
 const SEQ_55: &[u8] = include_bytes!("../templates/seq_55.bin");
 const SEQ_BD: &[u8] = include_bytes!("../templates/seq_BD.bin");
 const SEQ_7A: &[u8] = include_bytes!("../templates/seq_7A.bin");
+const SEQ_FF: &[u8] = include_bytes!("../templates/seq_FF.bin");
 
 fn get_template_bytes(name: &str, embedded: &'static [u8]) -> std::borrow::Cow<'static, [u8]> {
     if let Some(mut path) = dirs::data_dir() {
@@ -108,6 +110,75 @@ fn get_gray(buf: &[u8], w: i32, h: i32, x: i32, y: i32) -> f32 {
     let g = buf[idx + 1] as f32;
     let r = buf[idx + 2] as f32;
     r * 0.299 + g * 0.587 + b * 0.114
+}
+
+fn get_rgb(buf: &[u8], w: i32, h: i32, x: i32, y: i32) -> (u8, u8, u8) {
+    if x < 0 || x >= w || y < 0 || y >= h {
+        return (0, 0, 0);
+    }
+    let idx = ((y * w + x) * 4) as usize;
+    (buf[idx + 2], buf[idx + 1], buf[idx])
+}
+
+fn detect_buffer_size(buf: &[u8], win_w: i32, win_h: i32) -> usize {
+    // 1. Check user override in breach_protocol/config.json
+    if let Some(mut path) = dirs::data_dir() {
+        path.push("capri-tauri");
+        path.push("skills");
+        path.push("breach_protocol");
+        path.push("config.json");
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(bs) = val.get("buffer_size").and_then(|v| v.as_u64()) {
+                    if bs >= 4 && bs <= 8 {
+                        return bs as usize;
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Auto-detect from buffer box in upper screen area
+    let scale_x = win_w as f64 / 2560.0;
+    let scale_y = win_h as f64 / 1440.0;
+
+    let search_x1 = (1150.0 * scale_x) as i32;
+    let search_x2 = (1900.0 * scale_x).min(win_w as f64) as i32;
+    let search_y1 = (200.0 * scale_y) as i32;
+    let search_y2 = (360.0 * scale_y).min(win_h as f64) as i32;
+
+    let mut best_width = 0;
+    for y in search_y1..search_y2 {
+        let mut min_x = -1;
+        let mut max_x = -1;
+        let mut count = 0;
+        for x in search_x1..search_x2 {
+            let (r, g, b) = get_rgb(buf, win_w, win_h, x, y);
+            if r > 70 && g > 100 && b < 120 {
+                if min_x == -1 { min_x = x; }
+                max_x = x;
+                count += 1;
+            }
+        }
+        if min_x != -1 && max_x > min_x {
+            let w = max_x - min_x + 1;
+            if w >= (200.0 * scale_x) as i32 && w <= (650.0 * scale_x) as i32 && count >= w * 7 / 10 {
+                if w > best_width {
+                    best_width = w;
+                }
+            }
+        }
+    }
+
+    if best_width > 0 {
+        let norm_w = best_width as f64 / scale_x;
+        let slots = ((norm_w - 40.0) / 56.0).round() as usize;
+        if slots >= 4 && slots <= 8 {
+            return slots;
+        }
+    }
+
+    6 // default fallback for modern cyberdecks
 }
 
 fn detect_header(buf: &[u8], w: i32, h: i32) -> Option<(i32, i32, i32, i32)> {
@@ -235,22 +306,11 @@ fn match_patch(patch: &[f32], templates: &[Vec<f32>]) -> (&'static str, f32) {
 fn evaluate_path<'a>(codes: &[&'a str], sequences: &[Vec<&'a str>]) -> Vec<usize> {
     let mut matched = Vec::new();
     for (s_idx, seq) in sequences.iter().enumerate() {
-        let mut ptr = 0;
-        let mut completed = false;
-        for &c in codes {
-            if completed {
-                break;
-            }
-            if c == seq[ptr] {
-                ptr += 1;
-                if ptr == seq.len() {
-                    completed = true;
-                }
-            } else {
-                ptr = if c == seq[0] { 1 } else { 0 };
-            }
+        if seq.is_empty() {
+            matched.push(s_idx);
+            continue;
         }
-        if completed {
+        if codes.len() >= seq.len() && codes.windows(seq.len()).any(|w| w == seq.as_slice()) {
             matched.push(s_idx);
         }
     }
@@ -336,6 +396,7 @@ fn solve_matrix<'a>(
         visited[r][c] = false;
     }
 
+    // 1. Standard search starting from Row 0 (can use filler steps to reach anywhere)
     let mut path = Vec::with_capacity(buffer_size);
     let mut visited = [[false; 6]; 6];
     for start_c in 0..6 {
@@ -357,6 +418,34 @@ fn solve_matrix<'a>(
         );
     }
 
+    // 2. Also search if the best sequence starts in ANY other row (rows 1..6)
+    // Bridged via 1 navigation move (0, start_c) in row 0 down to (start_r, start_c):
+    if buffer_size > 1 {
+        for start_r in 1..6 {
+            for start_c in 0..6 {
+                let mut bridged_path = vec![(0, start_c)];
+                let mut b_visited = [[false; 6]; 6];
+                b_visited[0][start_c] = true;
+                dfs(
+                    start_r,
+                    start_c,
+                    false, // move was vertical from (0, start_c), next move is horizontal along start_r
+                    &mut bridged_path,
+                    &mut b_visited,
+                    matrix,
+                    sequences,
+                    buffer_size,
+                    &mut best_score,
+                    &mut best_path,
+                    &mut best_matched,
+                    w3,
+                    w2,
+                    w1,
+                );
+            }
+        }
+    }
+
     (best_path, best_matched)
 }
 
@@ -369,12 +458,14 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
     let mat_55 = get_template_bytes("mat_55.bin", MAT_55);
     let mat_bd = get_template_bytes("mat_BD.bin", MAT_BD);
     let mat_7a = get_template_bytes("mat_7A.bin", MAT_7A);
+    let mat_ff = get_template_bytes("mat_FF.bin", MAT_FF);
 
     let seq_1c = get_template_bytes("seq_1C.bin", SEQ_1C);
     let seq_e9 = get_template_bytes("seq_E9.bin", SEQ_E9);
     let seq_55 = get_template_bytes("seq_55.bin", SEQ_55);
     let seq_bd = get_template_bytes("seq_BD.bin", SEQ_BD);
     let seq_7a = get_template_bytes("seq_7A.bin", SEQ_7A);
+    let seq_ff = get_template_bytes("seq_FF.bin", SEQ_FF);
 
     let mat_tpls = vec![
         normalize(&mat_1c),
@@ -382,6 +473,7 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         normalize(&mat_55),
         normalize(&mat_bd),
         normalize(&mat_7a),
+        normalize(&mat_ff),
     ];
 
     let seq_tpls = vec![
@@ -390,6 +482,7 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         normalize(&seq_55),
         normalize(&seq_bd),
         normalize(&seq_7a),
+        normalize(&seq_ff),
     ];
 
     // Grid coordinates
@@ -492,7 +585,7 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         (t3, t2, t1)
     };
 
-    let buffer_size = 4;
+    let buffer_size = detect_buffer_size(&buf, win_w, win_h);
     let (best_path, matched) = solve_matrix(&matrix, &sequences, buffer_size, w3, w2, w1);
 
     let mut path_json = Vec::new();
