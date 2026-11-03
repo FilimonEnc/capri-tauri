@@ -1935,11 +1935,11 @@ export class FxLayer {
           ctx.moveTo(mb.x + mb.w - bLen, mb.y + mb.h); ctx.lineTo(mb.x + mb.w, mb.y + mb.h); ctx.lineTo(mb.x + mb.w, mb.y + mb.h - bLen);
           ctx.stroke();
 
-          // Cyber tag at bottom of matrix
+          // Cyber tag at top of matrix
           ctx.font = 'bold 9px "Consolas", monospace';
           ctx.fillStyle = 'rgba(233, 255, 0, 0.75)';
           ctx.textAlign = 'left';
-          ctx.fillText('>> MEMORY_STREAM: LOCKED // ICE: NULLIFIED <<', mb.x + 8, mb.y + mb.h + 14);
+          ctx.fillText('>> MEMORY_STREAM: LOCKED // ICE: NULLIFIED <<', mb.x + 8, mb.y - 8);
           ctx.restore();
         }
 
@@ -2330,9 +2330,10 @@ export class FxLayer {
           const bw = Math.max(440, Math.round(maxTextW + 56));
           const bh = 54;
 
+          const maxY = Math.max(...nodes.map(n => n.y));
           const centerX = meta.matrix_box ? (meta.matrix_box.x + meta.matrix_box.w / 2) : (first.x + 150);
           const bannerX = Math.max(bw / 2 + 25, Math.min(window.innerWidth - bw / 2 - 25, centerX));
-          const bannerY = Math.max(80, (meta.matrix_box ? meta.matrix_box.y : first.y) - 60);
+          const bannerY = meta.matrix_box ? (meta.matrix_box.y + meta.matrix_box.h + 48) : (maxY + 65);
 
           ctx.globalAlpha = bannerAlpha;
           ctx.fillStyle = 'rgba(20, 16, 28, 0.92)';
