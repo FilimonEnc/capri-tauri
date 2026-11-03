@@ -798,6 +798,17 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
     let seq_header_x = hx1 + (1050.0 * scale_x).round() as i32;
     let seq_header_y = hy1 + (18.0 * scale_x).round() as i32;
 
+    // Mascot position: floating gracefully in the open cyberspace corridor between Matrix & Daemons
+    let mascot_raw_x = if n == 6 {
+        hx1 + (825.0 * scale_x).round() as i32
+    } else {
+        hx1 + (785.0 * scale_x).round() as i32
+    };
+    let mascot_raw_y = hy1 + (30.0 * scale_x).round() as i32;
+
+    let mascot_x = if sf > 0.0 { (mascot_raw_x as f64 / sf).round() as i32 } else { mascot_raw_x };
+    let mascot_y = if sf > 0.0 { (mascot_raw_y as f64 / sf).round() as i32 } else { mascot_raw_y };
+
     Some(json!({
         "active": true,
         "buffer_size": buffer_size,
@@ -808,7 +819,9 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         "daemons": matched_names,
         "matched_count": matched.len(),
         "seq_header_x": seq_header_x,
-        "seq_header_y": seq_header_y
+        "seq_header_y": seq_header_y,
+        "mascot_x": mascot_x,
+        "mascot_y": mascot_y
     }))
 }
 

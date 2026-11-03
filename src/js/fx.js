@@ -609,20 +609,23 @@ export class FxLayer {
     });
     this._activeBreach = item;
 
-    // Show Capri breach mascot perched above daemon header
+    // Show Capri breach mascot floating in the cyberspace corridor between Matrix & Daemons
     const mascot = document.getElementById('capri-breach-mascot');
     if (mascot && nodes && nodes.length) {
       const first = nodes[0];
-      const seqX = meta.seq_header_x || (first.x + 650);
-      const seqY = meta.seq_header_y || Math.max(80, first.y - 100);
+      const mascotW = 105;
+      const mascotH = 166;
+      const posX = meta.mascot_x || (meta.seq_header_x ? meta.seq_header_x - 225 : first.x + 550);
+      const posY = meta.mascot_y || Math.max(60, first.y - 85);
 
-      // Center her seat on the top border of the sequence box
-      const left = seqX - 35;
-      const top = seqY - 135;
+      const left = posX - Math.round(mascotW / 2);
+      const top = posY;
       mascot.style.left = `${left}px`;
       mascot.style.top = `${top}px`;
+      mascot.style.width = `${mascotW}px`;
+      mascot.style.height = `${mascotH}px`;
       mascot.style.display = 'block';
-      mascot.style.opacity = '1';
+      mascot.style.opacity = '0.94';
     }
 
     return item;
@@ -1788,14 +1791,14 @@ export class FxLayer {
         // 0. Lightning conduit from Capri's hand to Node 1 (Initial Move)
         const first = nodes[0];
         const meta = it.meta || {};
-        const seqX = meta.seq_header_x || (first.x + 650);
-        const seqY = meta.seq_header_y || Math.max(80, first.y - 100);
+        const mascotW = 105;
+        const posX = meta.mascot_x || (meta.seq_header_x ? meta.seq_header_x - 225 : first.x + 550);
+        const posY = meta.mascot_y || Math.max(60, first.y - 85);
 
-        // Capri hand position (mascot left: seqX - 35, top: seqY - 135)
-        // Hand is at relative (+14, +124) inside the 140x221 mascot
+        // Capri hand position (scaled 0.75, hand is at +11, +93 from top-left)
         const hand = {
-          x: seqX - 35 + 14,
-          y: seqY - 135 + 124
+          x: posX - Math.round(mascotW / 2) + 11,
+          y: posY + 93
         };
 
         const handDist = Math.hypot(first.x - hand.x, first.y - hand.y);
@@ -1853,7 +1856,7 @@ export class FxLayer {
           ctx.fillStyle = '#00f0ff';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'bottom';
-          ctx.fillText('⚡ CAPRI // NETRUNNER OVERRIDE', seqX + 35, seqY - 145);
+          ctx.fillText('⚡ CAPRI // NETRUNNER', posX, posY - 6);
           ctx.restore();
         }
 

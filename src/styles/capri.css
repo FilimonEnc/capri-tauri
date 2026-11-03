@@ -121,14 +121,16 @@ body {
   pointer-events: none;
 }
 
-/* Cyberpunk 2077 Breach Protocol sitting mascot */
+/* Cyberpunk 2077 Breach Protocol floating netrunner mascot */
 .capri-breach-mascot {
   position: fixed;
   z-index: 3;
+  width: 105px;
+  height: 166px;
   pointer-events: none;
-  filter: drop-shadow(0 0 12px rgba(0, 240, 255, 0.65)) drop-shadow(0 0 24px rgba(233, 255, 0, 0.35));
+  filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.8)) drop-shadow(0 0 16px rgba(233, 255, 0, 0.4));
   transition: opacity 0.25s ease-out;
-  transform-origin: bottom center;
+  transform-origin: center center;
 }
 
 /* her small forms (chip.js): her biochip in the corner, her mask floating while she sleeps */
