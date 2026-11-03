@@ -133,6 +133,33 @@ body {
   transform-origin: center center;
 }
 
+.capri-breach-mascot.breaching {
+  animation: capriGlitch 3.2s infinite ease-in-out;
+}
+
+@keyframes capriGlitch {
+  0%, 86%, 100% {
+    transform: translate(0, 0);
+    filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.85)) drop-shadow(0 0 18px rgba(233, 255, 0, 0.45));
+  }
+  87% {
+    transform: translate(-3px, 1px) skewX(-2deg);
+    filter: drop-shadow(-4px 0 #ff0055) drop-shadow(3px 0 #00f0ff);
+  }
+  89% {
+    transform: translate(2px, -2px);
+    filter: drop-shadow(0 0 14px #e9ff00) drop-shadow(0 0 4px #ffffff);
+  }
+  91% {
+    transform: translate(-2px, 2px) skewX(1deg);
+    filter: drop-shadow(3px 0 #ff0055) drop-shadow(-3px 0 #00f0ff);
+  }
+  93% {
+    transform: translate(0, 0);
+    filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.85)) drop-shadow(0 0 18px rgba(233, 255, 0, 0.45));
+  }
+}
+
 /* her small forms (chip.js): her biochip in the corner, her mask floating while she sleeps */
 .chip {
   position: fixed;

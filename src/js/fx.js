@@ -624,6 +624,7 @@ export class FxLayer {
       mascot.style.top = `${top}px`;
       mascot.style.width = `${mascotW}px`;
       mascot.style.height = `${mascotH}px`;
+      mascot.classList.add('breaching');
       mascot.style.display = 'block';
       mascot.style.opacity = '0.94';
     }
@@ -645,17 +646,21 @@ export class FxLayer {
       if (dist <= 65) {
         // Player clicked the expected step!
         item.currentStep = i + 1;
+        item.lastClick = { x: node.x, y: node.y, t: performance.now() };
         this.sparkle(node.x, node.y, 24, '#e9ff00', '#00f0ff');
+        this.burst(node.x, node.y, { count: 18, power: 1.1 });
         if (item.currentStep >= nodes.length) {
+          this.burst(node.x, node.y, { count: 42, power: 1.8 });
           window.capriApp?.panel?.say?.({
             kind: 'info',
             face: 'smug',
             line: 'Все шаги выполнены! Демоны отправлены в сеть.',
             hold: 3500,
           });
+          window.capriApp?.voice?.play?.('done');
           window.capriApp?.voice?.play?.('star');
         } else {
-          window.capriApp?.voice?.play?.('pop');
+          window.capriApp?.voice?.play?.('bolt', { soft: true });
         }
         break;
       }
@@ -668,6 +673,7 @@ export class FxLayer {
     const mascot = document.getElementById('capri-breach-mascot');
     if (mascot) {
       mascot.style.opacity = '0';
+      mascot.classList.remove('breaching');
       setTimeout(() => {
         if (!this._activeBreach) mascot.style.display = 'none';
       }, 250);
@@ -1798,6 +1804,7 @@ export class FxLayer {
         const nodes = it.nodes;
         if (!nodes || nodes.length === 0) break;
         const curStep = it.currentStep || 0;
+        const isAllDone = curStep >= nodes.length;
         const elapsed = now - it.born;
 
         // Progressive reveal timing:
@@ -1814,19 +1821,208 @@ export class FxLayer {
         ctx.save();
         ctx.lineJoin = 'miter';
 
-        // 0. Lightning conduit from Capri's hand to Node 1 (Initial Move)
         const first = nodes[0];
         const meta = it.meta || {};
         const mascotW = 105;
         const posX = meta.mascot_x || (meta.seq_header_x ? meta.seq_header_x - 225 : first.x + 550);
         const posY = meta.mascot_y || Math.max(60, first.y - 85);
 
+        // -------------------------------------------------------------
+        // LAYER 0: Cyberspace Hex Rain (Falling matrix streams along screen flanks)
+        // -------------------------------------------------------------
+        const hexCols = [
+          { x: 35, speed: 0.14, seed: 1 },
+          { x: 75, speed: 0.22, seed: 2 },
+          { x: 120, speed: 0.18, seed: 3 },
+          { x: window.innerWidth - 130, speed: 0.19, seed: 4 },
+          { x: window.innerWidth - 85, speed: 0.25, seed: 5 },
+          { x: window.innerWidth - 45, speed: 0.16, seed: 6 },
+        ];
+        const hexChars = ['1C', '55', 'BD', 'E9', 'FF', '7A', '00', 'A4', 'F2', '08', 'C3'];
+        ctx.save();
+        ctx.font = 'bold 11px "Consolas", monospace';
+        for (const col of hexCols) {
+          const yOffset = (elapsed * col.speed) % (window.innerHeight + 250) - 150;
+          for (let j = 0; j < 14; j++) {
+            const charY = yOffset + j * 18;
+            if (charY < -20 || charY > window.innerHeight + 20) continue;
+            const charIdx = Math.floor((j * 7 + col.seed + Math.floor(elapsed * 0.003)) % hexChars.length);
+            const alpha = (1 - j / 14) * 0.45;
+            ctx.fillStyle = j === 0 ? '#ffffff' : (j < 3 ? '#00f0ff' : '#0088aa');
+            ctx.globalAlpha = j === 0 ? 0.85 : alpha;
+            ctx.fillText(hexChars[charIdx], col.x, charY);
+          }
+        }
+        ctx.restore();
+
+        // -------------------------------------------------------------
+        // LAYER 1: Initial System Intrusion Scanlines & Cyber Alert Banner
+        // -------------------------------------------------------------
+        if (elapsed < 3000) {
+          const fadeAlpha = elapsed > 2400 ? (3000 - elapsed) / 600 : 1.0;
+
+          // Fast horizontal scanline sweep across the screen
+          if (elapsed < 800) {
+            const scanY = (elapsed / 800) * window.innerHeight;
+            ctx.save();
+            ctx.fillStyle = 'rgba(0, 240, 255, 0.22)';
+            ctx.fillRect(0, scanY - 4, window.innerWidth, 8);
+            ctx.fillStyle = 'rgba(233, 255, 0, 0.45)';
+            ctx.fillRect(0, scanY - 1, window.innerWidth, 2);
+            ctx.restore();
+          }
+
+          // Cyberpunk intrusion alert bar in top center
+          const bannerW = 480;
+          const bannerH = 46;
+          const bx = window.innerWidth / 2 - bannerW / 2;
+          const by = 26;
+          const isGlitching = (Math.floor(elapsed * 0.02) % 7 === 0);
+          const glitchDx = isGlitching ? (Math.random() - 0.5) * 8 : 0;
+
+          ctx.save();
+          ctx.globalAlpha = fadeAlpha * 0.92;
+          ctx.fillStyle = 'rgba(12, 10, 18, 0.92)';
+          ctx.strokeStyle = isGlitching ? '#ff0055' : '#e9ff00';
+          ctx.lineWidth = 1.5;
+          ctx.fillRect(bx + glitchDx, by, bannerW, bannerH);
+          ctx.strokeRect(bx + glitchDx, by, bannerW, bannerH);
+
+          ctx.fillStyle = '#e9ff00';
+          ctx.font = 'bold 10px "Consolas", monospace';
+          ctx.textAlign = 'left';
+          ctx.fillText('/// NETRUNNER PROTOCOL: CAPRI.EXE INJECTED ///', bx + glitchDx + 14, by + 16);
+
+          ctx.font = 'bold 12px "Consolas", monospace';
+          ctx.fillStyle = '#00f0ff';
+          ctx.fillText('⚡ SYSTEM BREACH // SUBNET OVERRIDE: ROOT_ACCESS', bx + glitchDx + 14, by + 33);
+
+          if (isGlitching) {
+            ctx.fillStyle = 'rgba(255, 0, 85, 0.6)';
+            ctx.fillText('⚡ SYSTEM BREACH // SUBNET OVERRIDE: ROOT_ACCESS', bx + glitchDx + 16, by + 33);
+            ctx.fillStyle = 'rgba(0, 240, 255, 0.6)';
+            ctx.fillText('⚡ SYSTEM BREACH // SUBNET OVERRIDE: ROOT_ACCESS', bx + glitchDx + 12, by + 33);
+          }
+          ctx.restore();
+        }
+
+        // -------------------------------------------------------------
+        // LAYER 2: Matrix Frame HUD Brackets (Framing the Matrix Box)
+        // -------------------------------------------------------------
+        if (meta.matrix_box) {
+          const mb = meta.matrix_box;
+          ctx.save();
+          ctx.strokeStyle = 'rgba(0, 240, 255, 0.65)';
+          ctx.lineWidth = 1.5;
+          const bLen = 24;
+
+          // 4 corner cyber brackets
+          // Top-left
+          ctx.beginPath();
+          ctx.moveTo(mb.x, mb.y + bLen); ctx.lineTo(mb.x, mb.y); ctx.lineTo(mb.x + bLen, mb.y);
+          // Top-right
+          ctx.moveTo(mb.x + mb.w - bLen, mb.y); ctx.lineTo(mb.x + mb.w, mb.y); ctx.lineTo(mb.x + mb.w, mb.y + bLen);
+          // Bottom-left
+          ctx.moveTo(mb.x, mb.y + mb.h - bLen); ctx.lineTo(mb.x, mb.y + mb.h); ctx.lineTo(mb.x + bLen, mb.y + mb.h);
+          // Bottom-right
+          ctx.moveTo(mb.x + mb.w - bLen, mb.y + mb.h); ctx.lineTo(mb.x + mb.w, mb.y + mb.h); ctx.lineTo(mb.x + mb.w, mb.y + mb.h - bLen);
+          ctx.stroke();
+
+          // Cyber tag at bottom of matrix
+          ctx.font = 'bold 9px "Consolas", monospace';
+          ctx.fillStyle = 'rgba(233, 255, 0, 0.75)';
+          ctx.textAlign = 'left';
+          ctx.fillText('>> MEMORY_STREAM: LOCKED // ICE: NULLIFIED <<', mb.x + 8, mb.y + mb.h + 14);
+          ctx.restore();
+        }
+
+        // -------------------------------------------------------------
+        // LAYER 3: Daemon Upload Badges (Over Daemons list on right)
+        // -------------------------------------------------------------
+        if (meta.matched_rows && meta.matched_rows.length) {
+          ctx.save();
+          for (let idx = 0; idx < meta.matched_rows.length; idx++) {
+            const row = meta.matched_rows[idx];
+            const tagX = row.x - 22;
+            const tagY = row.y;
+
+            ctx.strokeStyle = isAllDone ? '#00ff88' : '#00f0ff';
+            ctx.lineWidth = 1.2;
+            ctx.fillStyle = isAllDone ? 'rgba(0, 255, 136, 0.16)' : 'rgba(0, 240, 255, 0.12)';
+
+            const tw = 32;
+            const th = 22;
+            ctx.fillRect(tagX - tw, tagY - th / 2, tw, th);
+            ctx.strokeRect(tagX - tw, tagY - th / 2, tw, th);
+
+            ctx.font = 'bold 11px "Consolas", monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = isAllDone ? '#00ff88' : '#e9ff00';
+            ctx.fillText(isAllDone ? '✓' : '⚡', tagX - tw / 2, tagY);
+          }
+          ctx.restore();
+        }
+
+        // -------------------------------------------------------------
+        // LAYER 4: Capri Netrunner Presence (Rotating holographic rings & telemetry)
+        // -------------------------------------------------------------
         // Capri hand position (scaled 0.75, hand is at +11, +93 from top-left)
         const hand = {
           x: posX - Math.round(mascotW / 2) + 11,
           y: posY + 93
         };
 
+        // Rotating cyber-rings around Capri's torso
+        ctx.save();
+        const haloAngle = elapsed * 0.0014;
+        const haloX = posX;
+        const haloY = posY + 78;
+
+        // Outer dotted circle
+        ctx.strokeStyle = 'rgba(0, 240, 255, 0.40)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 6]);
+        ctx.beginPath();
+        ctx.arc(haloX, haloY, 66, haloAngle, haloAngle + Math.PI * 2);
+        ctx.stroke();
+
+        // Inner segmented yellow arc
+        ctx.strokeStyle = 'rgba(233, 255, 0, 0.50)';
+        ctx.lineWidth = 2.0;
+        ctx.setLineDash([16, 12]);
+        ctx.beginPath();
+        ctx.arc(haloX, haloY, 50, -haloAngle * 1.5, -haloAngle * 1.5 + Math.PI * 1.4);
+        ctx.stroke();
+
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Floating Netrunner telemetry readout beside Capri
+        ctx.save();
+        ctx.font = '9px "Consolas", monospace';
+        ctx.fillStyle = 'rgba(0, 240, 255, 0.75)';
+        ctx.textAlign = 'left';
+        const tx = posX + 58;
+        const ty = posY + 32;
+        ctx.fillText('┌ NET: CAPRI_v0.5', tx, ty);
+        ctx.fillText('├ ICE: OVERRIDDEN', tx, ty + 12);
+        ctx.fillText('├ LINK: ACTIVE [100%]', tx, ty + 24);
+        ctx.fillText(isAllDone ? '└ STATUS: INFILTRATED' : '└ INJECTING DAEMONS...', tx, ty + 36);
+        ctx.restore();
+
+        // Holographic label directly above Capri
+        ctx.save();
+        ctx.font = 'bold 11px "Consolas", monospace';
+        ctx.fillStyle = '#00f0ff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('⚡ CAPRI // NETRUNNER', posX, posY - 6);
+        ctx.restore();
+
+        // -------------------------------------------------------------
+        // LAYER 5: Lightning Conduit from Capri's hand to Node 0
+        // -------------------------------------------------------------
         const handDist = Math.hypot(first.x - hand.x, first.y - hand.y);
         if (handDist > 10) {
           const isInitial = curStep === 0;
@@ -1890,18 +2086,11 @@ export class FxLayer {
             this.sparkle(first.x, first.y, isInitial ? 14 : 5, '#00f0ff', '#e9ff00');
           }
           ctx.restore();
-
-          // Cyberpunk holographic tag above Capri
-          ctx.save();
-          ctx.font = 'bold 11px "Consolas", monospace';
-          ctx.fillStyle = '#00f0ff';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'bottom';
-          ctx.fillText('⚡ CAPRI // NETRUNNER', posX, posY - 6);
-          ctx.restore();
         }
 
-        // 1. Draw lightning bolts between consecutive nodes (sequentially revealed!)
+        // -------------------------------------------------------------
+        // LAYER 6: Lightning Route Segments between Consecutive Nodes
+        // -------------------------------------------------------------
         for (let i = 0; i < nodes.length - 1; i++) {
           const segStart = CONDUIT_END + i * SEG_DUR;
           const segEnd = segStart + SEG_DUR;
@@ -1959,7 +2148,37 @@ export class FxLayer {
           }
         }
 
-        // 2. Draw HUD reticles and Step badges at each node (revealed as struck!)
+        // -------------------------------------------------------------
+        // LAYER 7: Player Click Shockwave Ripple & Crosshairs
+        // -------------------------------------------------------------
+        if (it.lastClick) {
+          const clickDt = now - it.lastClick.t;
+          if (clickDt < 380) {
+            const clickK = clickDt / 380;
+            ctx.save();
+            // Expanding shockwave circle
+            ctx.beginPath();
+            ctx.arc(it.lastClick.x, it.lastClick.y, 18 + clickK * 75, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(0, 240, 255, ${1 - clickK})`;
+            ctx.lineWidth = 2.5 * (1 - clickK);
+            ctx.stroke();
+
+            // Crosshair scan line pulse
+            ctx.strokeStyle = `rgba(233, 255, 0, ${0.75 * (1 - clickK)})`;
+            ctx.lineWidth = 1.0;
+            ctx.beginPath();
+            ctx.moveTo(it.lastClick.x - 100, it.lastClick.y);
+            ctx.lineTo(it.lastClick.x + 100, it.lastClick.y);
+            ctx.moveTo(it.lastClick.x, it.lastClick.y - 100);
+            ctx.lineTo(it.lastClick.x, it.lastClick.y + 100);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+
+        // -------------------------------------------------------------
+        // LAYER 8: HUD Reticles & Step Badges at each node
+        // -------------------------------------------------------------
         for (let i = 0; i < nodes.length; i++) {
           const nodeTime = CONDUIT_END + i * SEG_DUR;
           if (elapsed < nodeTime) continue; // Not revealed yet!
@@ -2085,7 +2304,9 @@ export class FxLayer {
           ctx.restore();
         }
 
-        // 3. Cyberpunk HUD Top Banner (fades in once the full chain is completed!)
+        // -------------------------------------------------------------
+        // LAYER 9: Cyberpunk Top HUD Banner (Solved route or victory state!)
+        // -------------------------------------------------------------
         if (elapsed >= totalRevealTime) {
           const bannerAlpha = Math.min(1.0, (elapsed - totalRevealTime) / 250);
           const bannerX = Math.max(300, Math.min(window.innerWidth - 300, first.x));
@@ -2093,31 +2314,40 @@ export class FxLayer {
 
           ctx.save();
           ctx.globalAlpha = bannerAlpha;
-          ctx.fillStyle = 'rgba(20, 16, 28, 0.88)';
-          ctx.strokeStyle = '#00f0ff';
+          ctx.fillStyle = 'rgba(20, 16, 28, 0.90)';
+          ctx.strokeStyle = isAllDone ? '#00ff88' : '#00f0ff';
           ctx.lineWidth = 1.5;
 
-          const bw = 380;
-          const bh = 50;
+          const bw = 400;
+          const bh = 52;
           ctx.fillRect(bannerX - bw / 2, bannerY - bh / 2, bw, bh);
           ctx.strokeRect(bannerX - bw / 2, bannerY - bh / 2, bw, bh);
 
-          // Header text
-          ctx.font = 'bold 11px "Consolas", monospace';
-          ctx.fillStyle = '#e9ff00';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText('⚡ NETRUNNER ICE-BREAKER // PROTOCOL SOLVED', bannerX, bannerY - 11);
+          if (isAllDone) {
+            ctx.font = 'bold 11px "Consolas", monospace';
+            ctx.fillStyle = '#00ff88';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('⚡ SYSTEM FULLY OVERRIDDEN // ALL ICE CLEARED ⚡', bannerX, bannerY - 11);
 
-          // Route sequence
-          const routeStr = nodes.map((n, idx) => `[${idx+1}] ${n.code}`).join(' ➔ ');
-          ctx.font = 'bold 13px "Consolas", monospace';
-          ctx.fillStyle = '#00f0ff';
-          ctx.fillText(routeStr, bannerX, bannerY + 10);
+            ctx.font = 'bold 12px "Consolas", monospace';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText('✓ ALL TARGET DAEMONS INJECTED INTO CYBERSPACE', bannerX, bannerY + 11);
+          } else {
+            ctx.font = 'bold 11px "Consolas", monospace';
+            ctx.fillStyle = '#e9ff00';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('⚡ NETRUNNER ICE-BREAKER // PROTOCOL SOLVED', bannerX, bannerY - 11);
+
+            // Route sequence
+            const routeStr = nodes.map((n, idx) => `[${idx+1}] ${n.code}`).join(' ➔ ');
+            ctx.font = 'bold 13px "Consolas", monospace';
+            ctx.fillStyle = '#00f0ff';
+            ctx.fillText(routeStr, bannerX, bannerY + 10);
+          }
           ctx.restore();
         }
-
-        ctx.restore();
 
         ctx.restore();
         break;

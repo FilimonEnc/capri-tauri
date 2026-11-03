@@ -798,6 +798,30 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
     let seq_header_x = hx1 + (1050.0 * scale_x).round() as i32;
     let seq_header_y = hy1 + (18.0 * scale_x).round() as i32;
 
+    let matched_rows: Vec<Value> = matched.iter().map(|&idx| {
+        let raw_y = seq_ys.get(idx).copied().unwrap_or(0);
+        let render_y = if sf > 0.0 { (raw_y as f64 / sf).round() as i32 } else { raw_y };
+        let raw_x = hx1 + (980.0 * scale_x).round() as i32;
+        let render_x = if sf > 0.0 { (raw_x as f64 / sf).round() as i32 } else { raw_x };
+        json!({
+            "index": idx,
+            "x": render_x,
+            "y": render_y,
+            "name": daemon_names.get(idx).unwrap_or(&"Daemon")
+        })
+    }).collect();
+
+    let mat_box_x = hx1 + (140.0 * scale_x).round() as i32;
+    let mat_box_w = ((if n == 6 { 560.0 } else { 490.0 }) * scale_x).round() as i32;
+    let mat_box_h = ((if n == 6 { 580.0 } else { 500.0 }) * scale_x).round() as i32;
+
+    let matrix_box = json!({
+        "x": if sf > 0.0 { (mat_box_x as f64 / sf).round() as i32 } else { mat_box_x },
+        "y": if sf > 0.0 { (hy1 as f64 / sf).round() as i32 } else { hy1 },
+        "w": if sf > 0.0 { (mat_box_w as f64 / sf).round() as i32 } else { mat_box_w },
+        "h": if sf > 0.0 { (mat_box_h as f64 / sf).round() as i32 } else { mat_box_h }
+    });
+
     // Mascot position: floating gracefully in the open cyberspace corridor between Matrix & Daemons
     let mascot_raw_x = if n == 6 {
         hx1 + (825.0 * scale_x).round() as i32
@@ -818,6 +842,8 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         "codes": path_codes,
         "daemons": matched_names,
         "matched_count": matched.len(),
+        "matched_rows": matched_rows,
+        "matrix_box": matrix_box,
         "seq_header_x": seq_header_x,
         "seq_header_y": seq_header_y,
         "mascot_x": mascot_x,
