@@ -1230,6 +1230,20 @@ export class FxLayer {
     return { x: lerp(pts[i][0], pts[i + 1][0], k), y: lerp(pts[i][1], pts[i + 1][1], k) };
   }
 
+  // Slices a polyline up to fraction u (0..1) with an interpolated final point.
+  slicePts(pts, u) {
+    if (!pts || pts.length === 0) return [];
+    if (u >= 1) return pts;
+    if (u <= 0) return [pts[0]];
+    const f = Math.min(pts.length - 1.001, Math.max(0, u * (pts.length - 1)));
+    const i = Math.floor(f), k = f - i;
+    const partial = pts.slice(0, i + 1);
+    const endX = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * k;
+    const endY = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * k;
+    partial.push([endX, endY]);
+    return partial;
+  }
+
   stroke(pts, color, width, dx = 0, dy = 0) {
     const { ctx } = this;
     ctx.beginPath();
@@ -1784,6 +1798,18 @@ export class FxLayer {
         const nodes = it.nodes;
         if (!nodes || nodes.length === 0) break;
         const curStep = it.currentStep || 0;
+        const elapsed = now - it.born;
+
+        // Progressive reveal timing:
+        // t=0: Capri mascot fades in (handled on DOM element)
+        // t=250..600ms: Lightning conduit shoots from Capri's hand to Node 0
+        // t=600ms: Node 0 is struck!
+        // t=600 + i * 150ms: Segment i travels sequentially from Node i to Node i+1
+        const CONDUIT_START = 250;
+        const CONDUIT_DUR = 350;
+        const CONDUIT_END = CONDUIT_START + CONDUIT_DUR; // 600ms
+        const SEG_DUR = 150;
+        const totalRevealTime = CONDUIT_END + (nodes.length - 1) * SEG_DUR;
 
         ctx.save();
         ctx.lineJoin = 'miter';
@@ -1803,36 +1829,49 @@ export class FxLayer {
 
         const handDist = Math.hypot(first.x - hand.x, first.y - hand.y);
         if (handDist > 10) {
-          const handPts = this.jag(hand, first, Math.min(22, Math.max(10, handDist * 0.045)), true);
           const isInitial = curStep === 0;
+          const conduitU = Math.min(1, Math.max(0, (elapsed - CONDUIT_START) / CONDUIT_DUR));
 
-          if (isInitial) {
-            // High-voltage electric surge from Capri's hand into cell 1
-            this.stroke(handPts, '#00f0ff', 7, -1, 1);
-            this.stroke(handPts, '#e9ff00', 4.0);
-            this.stroke(handPts, '#ffffff', 2.0);
+          if (elapsed >= CONDUIT_START) {
+            const rawHandPts = this.jag(hand, first, Math.min(22, Math.max(10, handDist * 0.045)), true);
+            const handPts = conduitU < 1 ? this.slicePts(rawHandPts, conduitU) : rawHandPts;
 
-            // Traveling lightning energy pulse along the wire
-            const travelT = ((now - it.born) * 0.003) % 1;
-            const pulsePt = this.along(handPts, travelT);
-            this.sparkle(pulsePt.x, pulsePt.y, 16, '#ffffff', '#e9ff00');
+            if (isInitial) {
+              // High-voltage electric surge from Capri's hand into cell 1
+              this.stroke(handPts, '#00f0ff', 7, -1, 1);
+              this.stroke(handPts, '#e9ff00', 4.0);
+              this.stroke(handPts, '#ffffff', 2.0);
 
-            // Forked lightning branches from the beam
-            if (frame % 2 === 0 && handPts.length > 2) {
-              const [fx, fy] = handPts[1 + Math.floor(rand(0, handPts.length - 2))];
-              const a = Math.atan2(first.y - hand.y, first.x - hand.x) + rand(-1.2, 1.2);
-              const l = rand(20, 55);
-              const fork = this.jag({ x: fx, y: fy }, { x: fx + Math.cos(a) * l, y: fy + Math.sin(a) * l }, 8);
-              this.stroke(fork, '#00f0ff', 2.5);
-              this.stroke(fork, '#ffffff', 1.0);
+              if (conduitU < 1) {
+                // Traveling lightning spearhead while moving
+                const tip = handPts[handPts.length - 1];
+                if (tip) {
+                  this.sparkle(tip[0], tip[1], 16, '#ffffff', '#e9ff00');
+                }
+              } else {
+                // Traveling continuous lightning energy pulses along the established conduit
+                const travelT = ((now - it.born) * 0.003) % 1;
+                const pulsePt = this.along(handPts, travelT);
+                this.sparkle(pulsePt.x, pulsePt.y, 16, '#ffffff', '#e9ff00');
+              }
+
+              // Forked lightning branches from the beam
+              if (frame % 2 === 0 && handPts.length > 2) {
+                const [fx, fy] = handPts[1 + Math.floor(rand(0, handPts.length - 2))];
+                const a = Math.atan2(first.y - hand.y, first.x - hand.x) + rand(-1.2, 1.2);
+                const l = rand(20, 55);
+                const fork = this.jag({ x: fx, y: fy }, { x: fx + Math.cos(a) * l, y: fy + Math.sin(a) * l }, 8);
+                this.stroke(fork, '#00f0ff', 2.5);
+                this.stroke(fork, '#ffffff', 1.0);
+              }
+            } else {
+              // Calm cybernetic uplink after step 1 has been activated
+              ctx.save();
+              ctx.globalAlpha = 0.5;
+              this.stroke(handPts, '#00ff88', 3.0);
+              this.stroke(handPts, '#ffffff', 1.0);
+              ctx.restore();
             }
-          } else {
-            // Calm cybernetic uplink after step 1 has been activated
-            ctx.save();
-            ctx.globalAlpha = 0.5;
-            this.stroke(handPts, '#00ff88', 3.0);
-            this.stroke(handPts, '#ffffff', 1.0);
-            ctx.restore();
           }
 
           // Electric plasma orb & cybernetic aura at Capri's hand
@@ -1846,8 +1885,10 @@ export class FxLayer {
           ctx.lineWidth = 2.0;
           ctx.stroke();
 
-          // Spark impact flare on Node 1
-          this.sparkle(first.x, first.y, isInitial ? 14 : 5, '#00f0ff', '#e9ff00');
+          // Spark impact flare on Node 1 when conduit strikes or active
+          if (elapsed >= CONDUIT_END) {
+            this.sparkle(first.x, first.y, isInitial ? 14 : 5, '#00f0ff', '#e9ff00');
+          }
           ctx.restore();
 
           // Cyberpunk holographic tag above Capri
@@ -1860,16 +1901,24 @@ export class FxLayer {
           ctx.restore();
         }
 
-        // 1. Draw lightning bolts between consecutive nodes
+        // 1. Draw lightning bolts between consecutive nodes (sequentially revealed!)
         for (let i = 0; i < nodes.length - 1; i++) {
+          const segStart = CONDUIT_END + i * SEG_DUR;
+          const segEnd = segStart + SEG_DUR;
+          if (elapsed < segStart) continue; // Not revealed yet!
+
           const from = nodes[i];
           const to = nodes[i + 1];
           const len = Math.hypot(to.x - from.x, to.y - from.y);
           if (len < 5) continue;
 
-          const pts = this.jag(from, to, Math.min(18, Math.max(7, len * 0.05)), true);
+          const rawPts = this.jag(from, to, Math.min(18, Math.max(7, len * 0.05)), true);
+          const isGrowing = elapsed < segEnd;
+          const segU = isGrowing ? (elapsed - segStart) / SEG_DUR : 1.0;
+          const pts = isGrowing ? this.slicePts(rawPts, segU) : rawPts;
+
           const isDoneSeg = i < curStep - 1;
-          const isActiveSeg = i === curStep - 1 || (curStep === 0 && i === 0);
+          const isActiveSeg = isGrowing || i === curStep - 1 || (curStep === 0 && i === 0);
 
           if (isDoneSeg) {
             // Already passed segment: calm subdued green/cyan
@@ -1883,7 +1932,19 @@ export class FxLayer {
             this.stroke(pts, '#e9ff00', 3.5);
             this.stroke(pts, '#ffffff', 1.8);
 
-            if (frame % 2 === 0) {
+            if (isGrowing) {
+              // Spark at the advancing tip of the bolt
+              const tip = pts[pts.length - 1];
+              if (tip) {
+                this.sparkle(tip[0], tip[1], 16, '#ffffff', '#e9ff00');
+              }
+            } else {
+              const travelT = ((now - it.born) * 0.0022 + i * 0.3) % 1;
+              const pulsePt = this.along(pts, travelT);
+              this.sparkle(pulsePt.x, pulsePt.y, 12, '#ffffff', '#e9ff00');
+            }
+
+            if (frame % 2 === 0 && pts.length > 2) {
               const [fx, fy] = pts[1 + Math.floor(rand(0, pts.length - 2))];
               const a = Math.atan2(to.y - from.y, to.x - from.x) + rand(-1.2, 1.2);
               const l = rand(15, 40);
@@ -1891,10 +1952,6 @@ export class FxLayer {
               this.stroke(fork, '#00f0ff', 2.5);
               this.stroke(fork, '#ffffff', 0.8);
             }
-
-            const travelT = ((now - it.born) * 0.0022 + i * 0.3) % 1;
-            const pulsePt = this.along(pts, travelT);
-            this.sparkle(pulsePt.x, pulsePt.y, 12, '#ffffff', '#e9ff00');
           } else {
             // Upcoming segment: clean neon cyan
             this.stroke(pts, '#00f0ff', 4, -1, 1);
@@ -1902,8 +1959,11 @@ export class FxLayer {
           }
         }
 
-        // 2. Draw HUD reticles and Step badges at each node
+        // 2. Draw HUD reticles and Step badges at each node (revealed as struck!)
         for (let i = 0; i < nodes.length; i++) {
+          const nodeTime = CONDUIT_END + i * SEG_DUR;
+          if (elapsed < nodeTime) continue; // Not revealed yet!
+
           const node = nodes[i];
           const isDone = i < curStep;
           const isNext = i === curStep;
@@ -1926,6 +1986,19 @@ export class FxLayer {
             alpha = 1.0;
           } else if (isEnd) {
             color = '#ff2152';
+          }
+
+          // Expanding shockwave burst on first appearance (within 180ms of being struck)
+          const hitElapsed = elapsed - nodeTime;
+          if (hitElapsed < 180) {
+            const shockK = hitElapsed / 180;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, 16 + shockK * 28, 0, Math.PI * 2);
+            ctx.strokeStyle = '#e9ff00';
+            ctx.lineWidth = 2.5 * (1 - shockK);
+            ctx.stroke();
+            ctx.restore();
           }
 
           ctx.save();
@@ -2012,31 +2085,39 @@ export class FxLayer {
           ctx.restore();
         }
 
-        // 3. Cyberpunk HUD Top Banner
-        const bannerX = Math.max(300, Math.min(window.innerWidth - 300, first.x));
-        const bannerY = Math.max(80, first.y - 140);
+        // 3. Cyberpunk HUD Top Banner (fades in once the full chain is completed!)
+        if (elapsed >= totalRevealTime) {
+          const bannerAlpha = Math.min(1.0, (elapsed - totalRevealTime) / 250);
+          const bannerX = Math.max(300, Math.min(window.innerWidth - 300, first.x));
+          const bannerY = Math.max(80, first.y - 140);
 
-        ctx.fillStyle = 'rgba(20, 16, 28, 0.88)';
-        ctx.strokeStyle = '#00f0ff';
-        ctx.lineWidth = 1.5;
+          ctx.save();
+          ctx.globalAlpha = bannerAlpha;
+          ctx.fillStyle = 'rgba(20, 16, 28, 0.88)';
+          ctx.strokeStyle = '#00f0ff';
+          ctx.lineWidth = 1.5;
 
-        const bw = 380;
-        const bh = 50;
-        ctx.fillRect(bannerX - bw / 2, bannerY - bh / 2, bw, bh);
-        ctx.strokeRect(bannerX - bw / 2, bannerY - bh / 2, bw, bh);
+          const bw = 380;
+          const bh = 50;
+          ctx.fillRect(bannerX - bw / 2, bannerY - bh / 2, bw, bh);
+          ctx.strokeRect(bannerX - bw / 2, bannerY - bh / 2, bw, bh);
 
-        // Header text
-        ctx.font = 'bold 11px "Consolas", monospace';
-        ctx.fillStyle = '#e9ff00';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('⚡ NETRUNNER ICE-BREAKER // PROTOCOL SOLVED', bannerX, bannerY - 11);
+          // Header text
+          ctx.font = 'bold 11px "Consolas", monospace';
+          ctx.fillStyle = '#e9ff00';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('⚡ NETRUNNER ICE-BREAKER // PROTOCOL SOLVED', bannerX, bannerY - 11);
 
-        // Route sequence
-        const routeStr = nodes.map((n, idx) => `[${idx+1}] ${n.code}`).join(' ➔ ');
-        ctx.font = 'bold 13px "Consolas", monospace';
-        ctx.fillStyle = '#00f0ff';
-        ctx.fillText(routeStr, bannerX, bannerY + 10);
+          // Route sequence
+          const routeStr = nodes.map((n, idx) => `[${idx+1}] ${n.code}`).join(' ➔ ');
+          ctx.font = 'bold 13px "Consolas", monospace';
+          ctx.fillStyle = '#00f0ff';
+          ctx.fillText(routeStr, bannerX, bannerY + 10);
+          ctx.restore();
+        }
+
+        ctx.restore();
 
         ctx.restore();
         break;

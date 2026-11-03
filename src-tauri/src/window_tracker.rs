@@ -183,6 +183,7 @@ impl WindowTracker {
             let mut last_breach_check = std::time::Instant::now();
             let mut breach_was_active = false;
             let mut breach_missed_count: u32 = 0;
+            let mut breach_detected_at: Option<std::time::Instant> = None;
 
             while r.load(Ordering::Relaxed) {
                 // 1. Cursor position tracking in exact CSS pixels
@@ -311,27 +312,43 @@ impl WindowTracker {
                 };
 
                 let now_inst = std::time::Instant::now();
-                if now_inst.duration_since(last_breach_check) >= Duration::from_millis(check_interval_ms) {
+                let effective_interval = if breach_detected_at.is_some() { 100u64 } else { check_interval_ms };
+                if now_inst.duration_since(last_breach_check) >= Duration::from_millis(effective_interval) {
                     last_breach_check = now_inst;
 
                     if !breach_was_active {
-                        // 1. Initial detection of breach protocol: compute optimal route ONCE
-                        if let Some(solution) = crate::cyberpunk::scan_and_solve_breach(win_x, win_y, win_w, win_h, sf) {
-                            breach_missed_count = 0;
-                            breach_was_active = true;
-                            let _ = app.emit("cyberpunk:breach_detected", solution);
+                        // 1. Initial detection of breach protocol:
+                        // Wait 1000ms after header appears for all in-game scramble/type-in animations to finish
+                        let is_visible = crate::cyberpunk::is_breach_matrix_visible(win_x, win_y, win_w, win_h);
+                        if is_visible {
+                            let now = std::time::Instant::now();
+                            if breach_detected_at.is_none() {
+                                breach_detected_at = Some(now);
+                            } else if let Some(first_seen) = breach_detected_at {
+                                if now.duration_since(first_seen) >= Duration::from_millis(1000) {
+                                    // 1.0s settle period elapsed! Scan and solve fully loaded matrix
+                                    if let Some(solution) = crate::cyberpunk::scan_and_solve_breach(win_x, win_y, win_w, win_h, sf) {
+                                        breach_missed_count = 0;
+                                        breach_was_active = true;
+                                        breach_detected_at = None;
+                                        let _ = app.emit("cyberpunk:breach_detected", solution);
 
-                            // Proactively enforce HWND_TOPMOST above full-screen DirectX 12 game
-                            if !self_hwnd.is_null() {
-                                unsafe {
-                                    SetWindowPos(
-                                        self_hwnd,
-                                        HWND_TOPMOST,
-                                        0, 0, 0, 0,
-                                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
-                                    );
+                                        // Proactively enforce HWND_TOPMOST above full-screen DirectX 12 game
+                                        if !self_hwnd.is_null() {
+                                            unsafe {
+                                                SetWindowPos(
+                                                    self_hwnd,
+                                                    HWND_TOPMOST,
+                                                    0, 0, 0, 0,
+                                                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
+                                                );
+                                            }
+                                        }
+                                    }
                                 }
                             }
+                        } else {
+                            breach_detected_at = None;
                         }
                     } else {
                         // 2. Breach session is ACTIVE:
@@ -355,6 +372,7 @@ impl WindowTracker {
                             if breach_missed_count >= missed_limit {
                                 breach_was_active = false;
                                 breach_missed_count = 0;
+                                breach_detected_at = None;
                                 let _ = app.emit("cyberpunk:breach_cleared", json!({ "cleared": true }));
                             }
                         }
