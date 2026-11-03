@@ -5,8 +5,8 @@ $srcNsis = 'D:\Projects\capri-tauri\src-tauri\target\release\bundle\nsis\Capri_0
 $portableDir = 'D:\Projects\capri-tauri\release-portable'
 $binDir = Join-Path $env:LOCALAPPDATA 'Capri\bin'
 
-Write-Host "1. Stopping existing Capri processes..."
-Get-Process -Name Capri*, capri* -ErrorAction SilentlyContinue | Stop-Process -Force
+Write-Host "1. Stopping existing Capri and WebView2 processes..."
+Get-Process -Name Capri*, capri*, msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 1
 
 Write-Host "2. Copying to release-portable..."
