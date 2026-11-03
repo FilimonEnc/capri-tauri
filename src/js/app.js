@@ -516,7 +516,7 @@ async function boot() {
   // Cyberpunk 2077 Breach Protocol detection & lightning overlay
   host.onCyberpunkBreach?.((data) => {
     if (data && data.path && data.path.length) {
-      fx.breachRoute(data.path, data.daemons || []);
+      fx.breachRoute(data.path, data.daemons || [], data);
       const count = data.matched_count || data.path.length;
       panel.say({
         kind: 'info',

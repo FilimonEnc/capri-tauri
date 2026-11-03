@@ -303,11 +303,128 @@ fn match_patch(patch: &[f32], templates: &[Vec<f32>]) -> (&'static str, f32) {
     (best_name, best_corr)
 }
 
+fn match_mat_jitter(
+    buf: &[u8],
+    w: i32,
+    h: i32,
+    cx: i32,
+    cy: i32,
+    templates: &[Vec<f32>],
+) -> (&'static str, f32) {
+    let mut best_name = HEX_NAMES[0];
+    let mut best_corr = -2.0f32;
+
+    for dy in (-4..=4).step_by(2) {
+        for dx in (-4..=4).step_by(2) {
+            let px0 = cx + dx - 24;
+            let py0 = cy + dy - 20;
+            if px0 < 0 || px0 + 48 > w || py0 < 0 || py0 + 40 > h {
+                continue;
+            }
+
+            let mut patch = Vec::with_capacity(48 * 40);
+            let mut sum_val = 0.0f32;
+            let mut sum_sq = 0.0f32;
+
+            for y in py0..(py0 + 40) {
+                for x in px0..(px0 + 48) {
+                    let val = get_gray(buf, w, h, x, y);
+                    patch.push(val);
+                    sum_val += val;
+                    sum_sq += val * val;
+                }
+            }
+
+            let len = patch.len() as f32;
+            let mean = sum_val / len;
+            let var = sum_sq / len - mean * mean;
+            if var <= 225.0 {
+                continue;
+            }
+            let std = (var + 1e-5).sqrt();
+
+            for (name, t_norm) in HEX_NAMES.iter().zip(templates.iter()) {
+                let mut corr_sum = 0.0f32;
+                for i in 0..patch.len() {
+                    let p_norm = (patch[i] - mean) / std;
+                    corr_sum += p_norm * t_norm[i];
+                }
+                let corr = corr_sum / len;
+                if corr > best_corr {
+                    best_corr = corr;
+                    best_name = name;
+                }
+            }
+        }
+    }
+
+    (best_name, best_corr)
+}
+
+fn match_seq_jitter(
+    buf: &[u8],
+    w: i32,
+    h: i32,
+    cx: i32,
+    cy: i32,
+    templates: &[Vec<f32>],
+) -> (&'static str, f32) {
+    let mut best_name = HEX_NAMES[0];
+    let mut best_corr = -2.0f32;
+
+    // Local jitter search: dx in -6..=6, dy in -4..=4 (step 2) to snap onto exact token alignment
+    for dy in (-4..=4).step_by(2) {
+        for dx in (-6..=6).step_by(2) {
+            let px0 = cx + dx - 17;
+            let py0 = cy + dy - 13;
+            if px0 < 0 || px0 + 34 > w || py0 < 0 || py0 + 26 > h {
+                continue;
+            }
+
+            let mut patch = Vec::with_capacity(34 * 26);
+            let mut sum_val = 0.0f32;
+            let mut sum_sq = 0.0f32;
+
+            for y in py0..(py0 + 26) {
+                for x in px0..(px0 + 34) {
+                    let val = get_gray(buf, w, h, x, y);
+                    patch.push(val);
+                    sum_val += val;
+                    sum_sq += val * val;
+                }
+            }
+
+            let len = patch.len() as f32;
+            let mean = sum_val / len;
+            let var = sum_sq / len - mean * mean;
+            if var <= 225.0 {
+                // Background dark space (std < 15)
+                continue;
+            }
+            let std = (var + 1e-5).sqrt();
+
+            for (name, t_norm) in HEX_NAMES.iter().zip(templates.iter()) {
+                let mut corr_sum = 0.0f32;
+                for i in 0..patch.len() {
+                    let p_norm = (patch[i] - mean) / std;
+                    corr_sum += p_norm * t_norm[i];
+                }
+                let corr = corr_sum / len;
+                if corr > best_corr {
+                    best_corr = corr;
+                    best_name = name;
+                }
+            }
+        }
+    }
+
+    (best_name, best_corr)
+}
+
 fn evaluate_path<'a>(codes: &[&'a str], sequences: &[Vec<&'a str>]) -> Vec<usize> {
     let mut matched = Vec::new();
     for (s_idx, seq) in sequences.iter().enumerate() {
         if seq.is_empty() {
-            matched.push(s_idx);
             continue;
         }
         if codes.len() >= seq.len() && codes.windows(seq.len()).any(|w| w == seq.as_slice()) {
@@ -317,19 +434,22 @@ fn evaluate_path<'a>(codes: &[&'a str], sequences: &[Vec<&'a str>]) -> Vec<usize
     matched
 }
 
-fn score_matched(matched: &[usize], w3: i32, w2: i32, w1: i32) -> i32 {
+fn score_matched(matched: &[usize], w4: i32, w3: i32, w2: i32, w1: i32) -> i32 {
+    if matched.is_empty() {
+        return 0;
+    }
     let mut score = matched.len() as i32 * 1000;
     if matched.contains(&3) {
-        score += w3 + 100; // Tier 4 daemon
+        score += w4; // Tier 4 daemon: Legendary Quickhack Blueprints & Specs
     }
     if matched.contains(&2) {
-        score += w3;
+        score += w3; // Tier 3 daemon: High-level Quickhacks & Components
     }
     if matched.contains(&1) {
-        score += w2;
+        score += w2; // Tier 2 daemon: Components + Eurodollars
     }
     if matched.contains(&0) {
-        score += w1;
+        score += w1; // Tier 1 daemon: Basic Eurodollars
     }
     score
 }
@@ -338,15 +458,16 @@ fn solve_matrix<'a>(
     matrix: &'a [Vec<&'a str>],
     sequences: &'a [Vec<&'a str>],
     buffer_size: usize,
+    w4: i32,
     w3: i32,
     w2: i32,
     w1: i32,
 ) -> (Vec<(usize, usize)>, Vec<usize>) {
-    let mut best_score = -1;
+    let mut best_score = 0; // Must strictly match at least one daemon to score > 0
     let mut best_path = Vec::new();
     let mut best_matched = Vec::new();
     let n = matrix.len();
-    if n == 0 {
+    if n == 0 || sequences.is_empty() {
         return (best_path, best_matched);
     }
     let m = matrix[0].len();
@@ -363,6 +484,7 @@ fn solve_matrix<'a>(
         best_score: &mut i32,
         best_path: &mut Vec<(usize, usize)>,
         best_matched: &mut Vec<usize>,
+        w4: i32,
         w3: i32,
         w2: i32,
         w1: i32,
@@ -372,9 +494,9 @@ fn solve_matrix<'a>(
 
         let codes: Vec<&str> = path.iter().map(|&(pr, pc)| matrix[pr][pc]).collect();
         let matched = evaluate_path(&codes, sequences);
-        let score = score_matched(&matched, w3, w2, w1);
+        let score = score_matched(&matched, w4, w3, w2, w1);
 
-        if score > *best_score || (score == *best_score && !best_path.is_empty() && path.len() < best_path.len()) {
+        if score > *best_score || (score > 0 && score == *best_score && !best_path.is_empty() && path.len() < best_path.len()) {
             *best_score = score;
             *best_path = path.clone();
             *best_matched = matched.clone();
@@ -392,13 +514,13 @@ fn solve_matrix<'a>(
         if is_horiz {
             for nr in 0..n_rows {
                 if nr != r && !visited[nr][c] {
-                    dfs(nr, c, false, path, visited, matrix, sequences, buffer_size, best_score, best_path, best_matched, w3, w2, w1);
+                    dfs(nr, c, false, path, visited, matrix, sequences, buffer_size, best_score, best_path, best_matched, w4, w3, w2, w1);
                 }
             }
         } else {
             for nc in 0..n_cols {
                 if nc != c && !visited[r][nc] {
-                    dfs(r, nc, true, path, visited, matrix, sequences, buffer_size, best_score, best_path, best_matched, w3, w2, w1);
+                    dfs(r, nc, true, path, visited, matrix, sequences, buffer_size, best_score, best_path, best_matched, w4, w3, w2, w1);
                 }
             }
         }
@@ -423,6 +545,7 @@ fn solve_matrix<'a>(
             &mut best_score,
             &mut best_path,
             &mut best_matched,
+            w4,
             w3,
             w2,
             w1,
@@ -448,12 +571,17 @@ fn solve_matrix<'a>(
                     &mut best_score,
                     &mut best_path,
                     &mut best_matched,
+                    w4,
                     w3,
                     w2,
                     w1,
                 );
             }
         }
+    }
+
+    if best_matched.is_empty() {
+        best_path.clear();
     }
 
     (best_path, best_matched)
@@ -515,19 +643,19 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
 
     // Standard grid coordinates relative to matrix header (hx1, hy1)
     let row_ys = [
-        hy1 + (113.0 * scale_x).round() as i32,
-        hy1 + (199.0 * scale_x).round() as i32,
-        hy1 + (284.0 * scale_x).round() as i32,
+        hy1 + (118.0 * scale_x).round() as i32,
+        hy1 + (202.0 * scale_x).round() as i32,
+        hy1 + (286.0 * scale_x).round() as i32,
         hy1 + (370.0 * scale_x).round() as i32,
-        hy1 + (455.0 * scale_x).round() as i32,
-        hy1 + (541.0 * scale_x).round() as i32,
+        hy1 + (454.0 * scale_x).round() as i32,
+        hy1 + (538.0 * scale_x).round() as i32,
     ];
     let col_xs = [
-        hx1 + (210.0 * scale_x).round() as i32,
+        hx1 + (214.0 * scale_x).round() as i32,
         hx1 + (295.0 * scale_x).round() as i32,
-        hx1 + (380.0 * scale_x).round() as i32,
-        hx1 + (466.0 * scale_x).round() as i32,
-        hx1 + (551.0 * scale_x).round() as i32,
+        hx1 + (379.0 * scale_x).round() as i32,
+        hx1 + (465.0 * scale_x).round() as i32,
+        hx1 + (550.0 * scale_x).round() as i32,
         hx1 + (636.0 * scale_x).round() as i32,
     ];
 
@@ -552,8 +680,8 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         if std < 15.0 {
             false
         } else {
-            let (_, corr) = match_patch(&patch, &mat_tpls);
-            corr > 0.40
+            let (_, corr) = match_mat_jitter(&buf, win_w, win_h, cx, cy, &mat_tpls);
+            corr > 0.35
         }
     };
     let n = if has_col5 { 6 } else { 5 };
@@ -565,14 +693,7 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         let cy = row_ys[r];
         for c in 0..n {
             let cx = col_xs[c];
-            // Extract 48x40 patch
-            let mut patch = Vec::with_capacity(48 * 40);
-            for py in (cy - 20)..(cy + 20) {
-                for px in (cx - 24)..(cx + 24) {
-                    patch.push(get_gray(&buf, win_w, win_h, px, py));
-                }
-            }
-            let (best_name, _) = match_patch(&patch, &mat_tpls);
+            let (best_name, _) = match_mat_jitter(&buf, win_w, win_h, cx, cy, &mat_tpls);
             matrix[r][c] = best_name;
             matrix_coords[r][c] = (cx, cy);
         }
@@ -580,13 +701,13 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
 
     // Sequence coordinates: support up to 4 daemon rows and up to 5 tokens each
     let seq_ys = [
-        hy1 + (86.0 * scale_x).round() as i32,
-        hy1 + (166.0 * scale_x).round() as i32,
-        hy1 + (246.0 * scale_x).round() as i32,
-        hy1 + (326.0 * scale_x).round() as i32,
+        hy1 + (88.0 * scale_x).round() as i32,
+        hy1 + (168.0 * scale_x).round() as i32,
+        hy1 + (248.0 * scale_x).round() as i32,
+        hy1 + (328.0 * scale_x).round() as i32,
     ];
     let seq_xs = [
-        hx1 + (1014.0 * scale_x).round() as i32,
+        hx1 + (1013.0 * scale_x).round() as i32,
         hx1 + (1069.0 * scale_x).round() as i32,
         hx1 + (1125.0 * scale_x).round() as i32,
         hx1 + (1181.0 * scale_x).round() as i32,
@@ -597,29 +718,16 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
     for &gy in &seq_ys {
         let mut seq = Vec::new();
         for &gx in &seq_xs {
-            let mut patch = Vec::with_capacity(34 * 26);
-            let mut sum_val = 0.0f32;
-            let mut sum_sq = 0.0f32;
-            for py in (gy - 13)..(gy + 13) {
-                for px in (gx - 17)..(gx + 17) {
-                    let val = get_gray(&buf, win_w, win_h, px, py);
-                    patch.push(val);
-                    sum_val += val;
-                    sum_sq += val * val;
-                }
-            }
-            let len = patch.len() as f32;
-            let mean = sum_val / len;
-            let std = (sum_sq / len - mean * mean + 1e-5).sqrt();
-            if std < 15.0 {
-                continue; // empty slot
-            }
-            let (best_name, corr) = match_patch(&patch, &seq_tpls);
-            if corr > 0.40 {
+            let (best_name, corr) = match_seq_jitter(&buf, win_w, win_h, gx, gy, &seq_tpls);
+            if corr > 0.35 {
                 seq.push(best_name);
+            } else if seq.len() >= 2 {
+                // Empty slot reached after 2+ tokens -> daemon row has ended
+                break;
             }
         }
-        if !seq.is_empty() {
+        // ONLY accept valid daemon sequences (must have 2 or more tokens)
+        if seq.len() >= 2 {
             sequences.push(seq);
         }
     }
@@ -628,9 +736,10 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         return None;
     }
 
-    let (w3, w2, w1) = {
-        let mut t3 = 500;
-        let mut t2 = 250;
+    let (w4, w3, w2, w1) = {
+        let mut t4 = 10000;
+        let mut t3 = 5000;
+        let mut t2 = 500;
         let mut t1 = 100;
         if let Some(mut path) = dirs::data_dir() {
             path.push("capri-tauri");
@@ -640,18 +749,23 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
             if let Ok(content) = std::fs::read_to_string(&path) {
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
                     if let Some(w) = val.get("weights") {
-                        t3 = w.get("tier3").and_then(|v| v.as_i64()).unwrap_or(500) as i32;
-                        t2 = w.get("tier2").and_then(|v| v.as_i64()).unwrap_or(250) as i32;
+                        t4 = w.get("tier4").and_then(|v| v.as_i64()).unwrap_or(10000) as i32;
+                        t3 = w.get("tier3").and_then(|v| v.as_i64()).unwrap_or(5000) as i32;
+                        t2 = w.get("tier2").and_then(|v| v.as_i64()).unwrap_or(500) as i32;
                         t1 = w.get("tier1").and_then(|v| v.as_i64()).unwrap_or(100) as i32;
                     }
                 }
             }
         }
-        (t3, t2, t1)
+        (t4, t3, t2, t1)
     };
 
     let buffer_size = detect_buffer_size(&buf, win_w, win_h);
-    let (best_path, matched) = solve_matrix(&matrix, &sequences, buffer_size, w3, w2, w1);
+    let (best_path, matched) = solve_matrix(&matrix, &sequences, buffer_size, w4, w3, w2, w1);
+
+    if best_path.is_empty() || matched.is_empty() {
+        return None;
+    }
 
     let mut path_json = Vec::new();
     let mut path_codes = Vec::new();
@@ -681,6 +795,9 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
     ];
     let matched_names: Vec<&str> = matched.iter().map(|&idx| daemon_names.get(idx).unwrap_or(&"Daemon")).copied().collect();
 
+    let seq_header_x = hx1 + (1050.0 * scale_x).round() as i32;
+    let seq_header_y = hy1 + (18.0 * scale_x).round() as i32;
+
     Some(json!({
         "active": true,
         "buffer_size": buffer_size,
@@ -689,7 +806,9 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         "path": path_json,
         "codes": path_codes,
         "daemons": matched_names,
-        "matched_count": matched.len()
+        "matched_count": matched.len(),
+        "seq_header_x": seq_header_x,
+        "seq_header_y": seq_header_y
     }))
 }
 

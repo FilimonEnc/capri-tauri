@@ -596,17 +596,35 @@ export class FxLayer {
 
   // Cyberpunk 2077 Breach Protocol Overlay:
   // Draws electric lightning lines across the matrix connecting optimal solution nodes.
-  breachRoute(nodes, daemons = []) {
+  breachRoute(nodes, daemons = [], meta = {}) {
     this.clearBreachRoute();
     const item = this.add({
       type: 'breach_route',
       life: 600000,
       nodes,
       daemons,
+      meta,
       currentStep: 0,
       born: performance.now(),
     });
     this._activeBreach = item;
+
+    // Show Capri breach mascot perched above daemon header
+    const mascot = document.getElementById('capri-breach-mascot');
+    if (mascot && nodes && nodes.length) {
+      const first = nodes[0];
+      const seqX = meta.seq_header_x || (first.x + 650);
+      const seqY = meta.seq_header_y || Math.max(80, first.y - 100);
+
+      // Center her seat on the top border of the sequence box
+      const left = seqX - 35;
+      const top = seqY - 135;
+      mascot.style.left = `${left}px`;
+      mascot.style.top = `${top}px`;
+      mascot.style.display = 'block';
+      mascot.style.opacity = '1';
+    }
+
     return item;
   }
 
@@ -644,6 +662,13 @@ export class FxLayer {
   clearBreachRoute() {
     this.items = this.items.filter((it) => it.type !== 'breach_route');
     this._activeBreach = null;
+    const mascot = document.getElementById('capri-breach-mascot');
+    if (mascot) {
+      mascot.style.opacity = '0';
+      setTimeout(() => {
+        if (!this._activeBreach) mascot.style.display = 'none';
+      }, 250);
+    }
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
@@ -1759,6 +1784,78 @@ export class FxLayer {
 
         ctx.save();
         ctx.lineJoin = 'miter';
+
+        // 0. Lightning conduit from Capri's hand to Node 1 (Initial Move)
+        const first = nodes[0];
+        const meta = it.meta || {};
+        const seqX = meta.seq_header_x || (first.x + 650);
+        const seqY = meta.seq_header_y || Math.max(80, first.y - 100);
+
+        // Capri hand position (mascot left: seqX - 35, top: seqY - 135)
+        // Hand is at relative (+14, +124) inside the 140x221 mascot
+        const hand = {
+          x: seqX - 35 + 14,
+          y: seqY - 135 + 124
+        };
+
+        const handDist = Math.hypot(first.x - hand.x, first.y - hand.y);
+        if (handDist > 10) {
+          const handPts = this.jag(hand, first, Math.min(22, Math.max(10, handDist * 0.045)), true);
+          const isInitial = curStep === 0;
+
+          if (isInitial) {
+            // High-voltage electric surge from Capri's hand into cell 1
+            this.stroke(handPts, '#00f0ff', 7, -1, 1);
+            this.stroke(handPts, '#e9ff00', 4.0);
+            this.stroke(handPts, '#ffffff', 2.0);
+
+            // Traveling lightning energy pulse along the wire
+            const travelT = ((now - it.born) * 0.003) % 1;
+            const pulsePt = this.along(handPts, travelT);
+            this.sparkle(pulsePt.x, pulsePt.y, 16, '#ffffff', '#e9ff00');
+
+            // Forked lightning branches from the beam
+            if (frame % 2 === 0 && handPts.length > 2) {
+              const [fx, fy] = handPts[1 + Math.floor(rand(0, handPts.length - 2))];
+              const a = Math.atan2(first.y - hand.y, first.x - hand.x) + rand(-1.2, 1.2);
+              const l = rand(20, 55);
+              const fork = this.jag({ x: fx, y: fy }, { x: fx + Math.cos(a) * l, y: fy + Math.sin(a) * l }, 8);
+              this.stroke(fork, '#00f0ff', 2.5);
+              this.stroke(fork, '#ffffff', 1.0);
+            }
+          } else {
+            // Calm cybernetic uplink after step 1 has been activated
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            this.stroke(handPts, '#00ff88', 3.0);
+            this.stroke(handPts, '#ffffff', 1.0);
+            ctx.restore();
+          }
+
+          // Electric plasma orb & cybernetic aura at Capri's hand
+          ctx.save();
+          const pulseR = 8 + Math.sin(now * 0.015) * 3;
+          ctx.beginPath();
+          ctx.arc(hand.x, hand.y, pulseR, 0, Math.PI * 2);
+          ctx.fillStyle = isInitial ? 'rgba(233, 255, 0, 0.45)' : 'rgba(0, 255, 136, 0.35)';
+          ctx.fill();
+          ctx.strokeStyle = isInitial ? '#00f0ff' : '#00ff88';
+          ctx.lineWidth = 2.0;
+          ctx.stroke();
+
+          // Spark impact flare on Node 1
+          this.sparkle(first.x, first.y, isInitial ? 14 : 5, '#00f0ff', '#e9ff00');
+          ctx.restore();
+
+          // Cyberpunk holographic tag above Capri
+          ctx.save();
+          ctx.font = 'bold 11px "Consolas", monospace';
+          ctx.fillStyle = '#00f0ff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText('⚡ CAPRI // NETRUNNER OVERRIDE', seqX + 35, seqY - 145);
+          ctx.restore();
+        }
 
         // 1. Draw lightning bolts between consecutive nodes
         for (let i = 0; i < nodes.length - 1; i++) {
