@@ -2010,7 +2010,6 @@ export class FxLayer {
         }
 
         // 3. Cyberpunk HUD Top Banner
-        const first = nodes[0];
         const bannerX = Math.max(300, Math.min(window.innerWidth - 300, first.x));
         const bannerY = Math.max(80, first.y - 140);
 
