@@ -244,13 +244,13 @@ fn evaluate_path<'a>(codes: &[&'a str], sequences: &[Vec<&'a str>]) -> Vec<usize
 fn score_matched(matched: &[usize]) -> i32 {
     let mut score = matched.len() as i32 * 1000;
     if matched.contains(&2) {
-        score += 100;
+        score += 500;
     }
     if matched.contains(&1) {
-        score += 30;
+        score += 250;
     }
     if matched.contains(&0) {
-        score += 10;
+        score += 100;
     }
     score
 }
