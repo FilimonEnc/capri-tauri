@@ -1,7 +1,7 @@
 # Capri Desktop // Rust + Tauri v2 Edition ⚡
 
 > **Fork & Rewrite Notice**  
-> Этот проект является глубоким форком и полным переосмыслением оригинального [capri-desktop](https://github.com/FilimonEnc/capri-desktop).  
+> Этот проект является глубоким форком и полным переосмыслением оригинального [capri-desktop](https://github.com/mochiiwuff/capri-desktop).  
 > Приложение было полностью переписано с Electron/Node.js на **Rust + Tauri v2** для достижения максимальной производительности, минимального потребления памяти и нативной интеграции с Windows Win32 API.
 
 ---
