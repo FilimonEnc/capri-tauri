@@ -292,9 +292,9 @@ impl WindowTracker {
                     let _ = app.emit("windows:update", snap);
                 }
 
-                // 3. Cyberpunk 2077 Breach Protocol background detection (~500ms)
+                // 3. Cyberpunk 2077 Breach Protocol background detection (~400ms)
                 let now_inst = std::time::Instant::now();
-                if now_inst.duration_since(last_breach_check) >= Duration::from_millis(500) {
+                if now_inst.duration_since(last_breach_check) >= Duration::from_millis(400) {
                     last_breach_check = now_inst;
                     if let Some(solution) = crate::cyberpunk::scan_and_solve_breach(win_x, win_y, win_w, win_h, sf) {
                         breach_missed_count = 0;
@@ -331,8 +331,8 @@ impl WindowTracker {
                             }
                         }
 
-                        // Only clear after ~2 seconds (4 missed checks) of consistently not seeing breach
-                        if breach_missed_count >= 4 {
+                        // Clear promptly after ~800ms (2 missed checks) of not seeing breach matrix
+                        if breach_missed_count >= 2 {
                             breach_was_active = false;
                             breach_missed_count = 0;
                             last_solution_codes = serde_json::Value::Null;

@@ -610,10 +610,9 @@ export class FxLayer {
   }
 
   clearBreachRoute() {
-    if (this._activeBreach) {
-      this._activeBreach.dead = true;
-      this._activeBreach = null;
-    }
+    this.items = this.items.filter((it) => it.type !== 'breach_route');
+    this._activeBreach = null;
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
   // ---------- cut-ins ----------
@@ -847,7 +846,7 @@ export class FxLayer {
     const { ctx } = this;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.items = this.items.filter((it) => {
-      const alive = now - it.born < it.life;
+      const alive = !it.dead && (now - it.born < it.life);
       if (!alive) it.done?.();
       return alive;
     });

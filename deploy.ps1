@@ -21,7 +21,8 @@ Copy-Item -Force $srcApp (Join-Path $binDir 'CapriCore.exe')
 Copy-Item -Force $srcLauncher (Join-Path $binDir 'Capri.exe')
 
 Write-Host "4. Launching updated CapriCore..."
-Start-Process -FilePath (Join-Path $binDir 'CapriCore.exe') -WorkingDirectory $binDir
+$coreExe = Join-Path $binDir 'CapriCore.exe'
+Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine = "`"$coreExe`""; CurrentDirectory = $binDir}
 Start-Sleep -Seconds 2
 
 Get-Process -Name CapriCore -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, StartTime
