@@ -93,6 +93,18 @@ impl BridgeServer {
                     continue;
                 }
 
+                // GET / POST /api/skills/reload
+                if url.starts_with("/api/skills/reload") {
+                    let _ = app.emit("skills:reload", json!({ "status": "ok" }));
+                    let mut res = Response::from_string(json!({ "ok": true, "reloaded": true }).to_string());
+                    res.add_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                    for h in cors_headers {
+                        res.add_header(h);
+                    }
+                    let _ = request.respond(res);
+                    continue;
+                }
+
                 // GET /api/skills - with persisted installed / enabled state
                 if method == "GET" && url.starts_with("/api/skills") {
                     let skills_json = get_skills_with_saved_state();

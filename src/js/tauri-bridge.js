@@ -107,6 +107,69 @@ listen('cursor:down', (event) => {
   window.dispatchEvent(mouseEvent);
 });
 
+// Dynamic Pluggable Skills Registry
+let dynamicSkills = new Map();
+
+function compileSkillCode(code, id) {
+  if (!code || !code.trim()) return null;
+  try {
+    let cleanCode = code.trim();
+    if (cleanCode.startsWith('export default')) {
+      cleanCode = cleanCode.replace(/^export\s+default\s+/, '');
+    }
+    const fn = new Function(`"use strict"; return (${cleanCode});`);
+    const res = fn();
+    if (typeof res === 'function') return res;
+    if (typeof res?.execute === 'function') return res.execute.bind(res);
+    if (typeof res?.default === 'function') return res.default.bind(res);
+  } catch {
+    try {
+      return (context) => {
+        const runFn = new Function('context', `"use strict"; const { text, match, host, app, fx, voice, panel, invoke } = context;\n${code}`);
+        return runFn(context);
+      };
+    } catch (err) {
+      console.error(`[skills] failed to compile dynamic skill ${id}:`, err);
+    }
+  }
+  return null;
+}
+
+async function loadDynamicSkills() {
+  try {
+    const list = await invoke('list_dynamic_skills');
+    if (!Array.isArray(list)) return { ok: false, count: 0 };
+    const newMap = new Map();
+    for (const item of list) {
+      const { id, manifest, code, has_py, has_ps1, dir } = item;
+      const execute = compileSkillCode(code, id);
+      newMap.set(id, { id, manifest, execute, has_py, has_ps1, dir });
+    }
+    dynamicSkills = newMap;
+    console.log(`[skills] Loaded ${dynamicSkills.size} dynamic skills from disk.`);
+    return { ok: true, count: dynamicSkills.size };
+  } catch (e) {
+    console.warn('[skills] list_dynamic_skills error:', e);
+    return { ok: false, error: e };
+  }
+}
+
+// Initial load & hot reload on backend event
+setTimeout(() => loadDynamicSkills(), 150);
+listen('skills:reload', () => {
+  loadDynamicSkills().then((res) => {
+    if (window.capriApp && window.capriApp.panel) {
+      window.capriApp.panel.say({
+        kind: 'info',
+        face: 'smug',
+        line: `⚡ Слой навыков перезагружен с диска! Подключено: ${res.count || dynamicSkills.size}`,
+        hold: 3000,
+      });
+      window.capriApp.voice?.play('star');
+    }
+  });
+});
+
 window.host = {
   // Event channels from Rust backend
   onClaudeEvent: on('claude:event'),
@@ -247,8 +310,39 @@ window.host = {
       .then((r) => r.json())
       .catch(() => ({ ok: true })),
 
+  skillsReload: async () => {
+    return await loadDynamicSkills();
+  },
+  openSkillsFolder: () => invoke('open_skills_folder'),
+  runSkillScript: (skillId, scriptType, args) => invoke('run_skill_script', { skillId, scriptType, args: args || [] }),
+
   skillsMatch: async (text) => {
     const clean = String(text || '').trim();
+    if (!clean) return null;
+
+    // 0. Manual reload command
+    if (/(?:перезагрузи|обнови|reload)\s*(?:навыки|скиллы|skills)|\/(?:reload|skills)/i.test(clean)) {
+      return { id: 'skills_reload', match: [clean] };
+    }
+
+    // 1. Dynamic skills from disk first
+    for (const [id, skill] of dynamicSkills) {
+      if (skill.manifest?.enabled === false) continue;
+      const patterns = skill.manifest?.patterns;
+      if (Array.isArray(patterns)) {
+        for (const pat of patterns) {
+          try {
+            const rx = new RegExp(pat, 'i');
+            const m = clean.match(rx);
+            if (m) {
+              return { id, match: Array.from(m), dynamic: true, skill };
+            }
+          } catch {}
+        }
+      }
+    }
+
+    // 2. Built-in fallbacks
     if (/(?:взлом|взломай|протокол|breach|загадк[ау]|матриц[ау]|головоломк[ау]|cyberpunk\s*hack|киберпанк\s*взлом)/i.test(clean)) {
       return { id: 'breach_protocol', match: [clean] };
     }
@@ -279,6 +373,40 @@ window.host = {
   },
 
   skillsRun: async (id, { text, match }) => {
+    // 0. Manual reload command
+    if (id === 'skills_reload') {
+      const res = await loadDynamicSkills();
+      return {
+        ok: true,
+        text: `⚡ Слой навыков перезагружен с диска без перезапуска приложения! Активно динамических модулей: ${res.count || dynamicSkills.size}.`,
+        face: 'smug'
+      };
+    }
+
+    // 1. Check dynamic skill from disk
+    const dyn = dynamicSkills.get(id);
+    if (dyn && typeof dyn.execute === 'function') {
+      try {
+        const res = await dyn.execute({
+          text,
+          match,
+          host: window.host,
+          app: window.capriApp,
+          fx: window.capriApp?.fx,
+          voice: window.capriApp?.voice,
+          panel: window.capriApp?.panel,
+          invoke,
+        });
+        if (res && res.passThrough !== true) {
+          return res;
+        }
+      } catch (err) {
+        console.error(`[skills] Dynamic skill ${id} execution error:`, err);
+        return { ok: false, text: `Ошибка в скрипте динамического навыка ${id}: ${err.message || err}`, face: 'frown' };
+      }
+    }
+
+    // 2. Built-in fallbacks
     if (id === 'breach_protocol') {
       try {
         const res = await invoke('cyberpunk_solve_breach');
@@ -482,6 +610,14 @@ window.host = {
     return { ok: true, text: 'Команда выполнена успешно, choom!' };
   },
 
-  skillsPowers: () => Promise.resolve([]),
+  skillsPowers: async () => {
+    const powers = [];
+    for (const [, s] of dynamicSkills) {
+      if (s.manifest?.enabled !== false && s.manifest?.prompt) {
+        powers.push(s.manifest.prompt);
+      }
+    }
+    return powers;
+  },
   getSystemStats: () => invoke('get_system_stats'),
 };

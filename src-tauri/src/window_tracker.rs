@@ -292,9 +292,27 @@ impl WindowTracker {
                     let _ = app.emit("windows:update", snap);
                 }
 
-                // 3. Cyberpunk 2077 Breach Protocol background detection (~400ms)
+                // 3. Cyberpunk 2077 Breach Protocol background detection (dynamically configured from skill config.json)
+                let (check_interval_ms, missed_limit) = {
+                    let mut interval = 400u64;
+                    let mut missed = 2u32;
+                    if let Some(mut path) = dirs::data_dir() {
+                        path.push("capri-tauri");
+                        path.push("skills");
+                        path.push("breach_protocol");
+                        path.push("config.json");
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                                interval = val.get("interval_ms").and_then(|v| v.as_u64()).unwrap_or(400);
+                                missed = val.get("missed_debounce").and_then(|v| v.as_u64()).unwrap_or(2) as u32;
+                            }
+                        }
+                    }
+                    (interval, missed)
+                };
+
                 let now_inst = std::time::Instant::now();
-                if now_inst.duration_since(last_breach_check) >= Duration::from_millis(400) {
+                if now_inst.duration_since(last_breach_check) >= Duration::from_millis(check_interval_ms) {
                     last_breach_check = now_inst;
                     if let Some(solution) = crate::cyberpunk::scan_and_solve_breach(win_x, win_y, win_w, win_h, sf) {
                         breach_missed_count = 0;
@@ -331,8 +349,8 @@ impl WindowTracker {
                             }
                         }
 
-                        // Clear promptly after ~800ms (2 missed checks) of not seeing breach matrix
-                        if breach_missed_count >= 2 {
+                        // Clear promptly after missed checks of not seeing breach matrix
+                        if breach_missed_count >= missed_limit {
                             breach_was_active = false;
                             breach_missed_count = 0;
                             last_solution_codes = serde_json::Value::Null;

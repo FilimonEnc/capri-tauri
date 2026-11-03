@@ -20,6 +20,22 @@ const SEQ_55: &[u8] = include_bytes!("../templates/seq_55.bin");
 const SEQ_BD: &[u8] = include_bytes!("../templates/seq_BD.bin");
 const SEQ_7A: &[u8] = include_bytes!("../templates/seq_7A.bin");
 
+fn get_template_bytes(name: &str, embedded: &'static [u8]) -> std::borrow::Cow<'static, [u8]> {
+    if let Some(mut path) = dirs::data_dir() {
+        path.push("capri-tauri");
+        path.push("skills");
+        path.push("breach_protocol");
+        path.push("templates");
+        path.push(name);
+        if path.exists() {
+            if let Ok(bytes) = std::fs::read(&path) {
+                return std::borrow::Cow::Owned(bytes);
+            }
+        }
+    }
+    std::borrow::Cow::Borrowed(embedded)
+}
+
 fn normalize(bytes: &[u8]) -> Vec<f32> {
     let len = bytes.len() as f32;
     let sum: f32 = bytes.iter().map(|&b| b as f32).sum();
@@ -241,16 +257,16 @@ fn evaluate_path<'a>(codes: &[&'a str], sequences: &[Vec<&'a str>]) -> Vec<usize
     matched
 }
 
-fn score_matched(matched: &[usize]) -> i32 {
+fn score_matched(matched: &[usize], w3: i32, w2: i32, w1: i32) -> i32 {
     let mut score = matched.len() as i32 * 1000;
     if matched.contains(&2) {
-        score += 500;
+        score += w3;
     }
     if matched.contains(&1) {
-        score += 250;
+        score += w2;
     }
     if matched.contains(&0) {
-        score += 100;
+        score += w1;
     }
     score
 }
@@ -259,6 +275,9 @@ fn solve_matrix<'a>(
     matrix: &'a [[&'a str; 6]; 6],
     sequences: &'a [Vec<&'a str>],
     buffer_size: usize,
+    w3: i32,
+    w2: i32,
+    w1: i32,
 ) -> (Vec<(usize, usize)>, Vec<usize>) {
     let mut best_score = -1;
     let mut best_path = Vec::new();
@@ -276,13 +295,16 @@ fn solve_matrix<'a>(
         best_score: &mut i32,
         best_path: &mut Vec<(usize, usize)>,
         best_matched: &mut Vec<usize>,
+        w3: i32,
+        w2: i32,
+        w1: i32,
     ) {
         path.push((r, c));
         visited[r][c] = true;
 
         let codes: Vec<&str> = path.iter().map(|&(pr, pc)| matrix[pr][pc]).collect();
         let matched = evaluate_path(&codes, sequences);
-        let score = score_matched(&matched);
+        let score = score_matched(&matched, w3, w2, w1);
 
         if score > *best_score || (score == *best_score && !best_path.is_empty() && path.len() < best_path.len()) {
             *best_score = score;
@@ -299,13 +321,13 @@ fn solve_matrix<'a>(
         if is_horiz {
             for nr in 0..6 {
                 if nr != r && !visited[nr][c] {
-                    dfs(nr, c, false, path, visited, matrix, sequences, buffer_size, best_score, best_path, best_matched);
+                    dfs(nr, c, false, path, visited, matrix, sequences, buffer_size, best_score, best_path, best_matched, w3, w2, w1);
                 }
             }
         } else {
             for nc in 0..6 {
                 if nc != c && !visited[r][nc] {
-                    dfs(r, nc, true, path, visited, matrix, sequences, buffer_size, best_score, best_path, best_matched);
+                    dfs(r, nc, true, path, visited, matrix, sequences, buffer_size, best_score, best_path, best_matched, w3, w2, w1);
                 }
             }
         }
@@ -329,6 +351,9 @@ fn solve_matrix<'a>(
             &mut best_score,
             &mut best_path,
             &mut best_matched,
+            w3,
+            w2,
+            w1,
         );
     }
 
@@ -339,20 +364,32 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
     let buf = capture_screen(win_x, win_y, win_w, win_h)?;
     let (hx1, hy1, _hw, _hh) = detect_header(&buf, win_w, win_h)?;
 
+    let mat_1c = get_template_bytes("mat_1C.bin", MAT_1C);
+    let mat_e9 = get_template_bytes("mat_E9.bin", MAT_E9);
+    let mat_55 = get_template_bytes("mat_55.bin", MAT_55);
+    let mat_bd = get_template_bytes("mat_BD.bin", MAT_BD);
+    let mat_7a = get_template_bytes("mat_7A.bin", MAT_7A);
+
+    let seq_1c = get_template_bytes("seq_1C.bin", SEQ_1C);
+    let seq_e9 = get_template_bytes("seq_E9.bin", SEQ_E9);
+    let seq_55 = get_template_bytes("seq_55.bin", SEQ_55);
+    let seq_bd = get_template_bytes("seq_BD.bin", SEQ_BD);
+    let seq_7a = get_template_bytes("seq_7A.bin", SEQ_7A);
+
     let mat_tpls = vec![
-        normalize(MAT_1C),
-        normalize(MAT_E9),
-        normalize(MAT_55),
-        normalize(MAT_BD),
-        normalize(MAT_7A),
+        normalize(&mat_1c),
+        normalize(&mat_e9),
+        normalize(&mat_55),
+        normalize(&mat_bd),
+        normalize(&mat_7a),
     ];
 
     let seq_tpls = vec![
-        normalize(SEQ_1C),
-        normalize(SEQ_E9),
-        normalize(SEQ_55),
-        normalize(SEQ_BD),
-        normalize(SEQ_7A),
+        normalize(&seq_1c),
+        normalize(&seq_e9),
+        normalize(&seq_55),
+        normalize(&seq_bd),
+        normalize(&seq_7a),
     ];
 
     // Grid coordinates
@@ -433,8 +470,30 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         return None;
     }
 
+    let (w3, w2, w1) = {
+        let mut t3 = 500;
+        let mut t2 = 250;
+        let mut t1 = 100;
+        if let Some(mut path) = dirs::data_dir() {
+            path.push("capri-tauri");
+            path.push("skills");
+            path.push("breach_protocol");
+            path.push("config.json");
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(w) = val.get("weights") {
+                        t3 = w.get("tier3").and_then(|v| v.as_i64()).unwrap_or(500) as i32;
+                        t2 = w.get("tier2").and_then(|v| v.as_i64()).unwrap_or(250) as i32;
+                        t1 = w.get("tier1").and_then(|v| v.as_i64()).unwrap_or(100) as i32;
+                    }
+                }
+            }
+        }
+        (t3, t2, t1)
+    };
+
     let buffer_size = 4;
-    let (best_path, matched) = solve_matrix(&matrix, &sequences, buffer_size);
+    let (best_path, matched) = solve_matrix(&matrix, &sequences, buffer_size, w3, w2, w1);
 
     let mut path_json = Vec::new();
     let mut path_codes = Vec::new();

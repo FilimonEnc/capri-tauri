@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{Manager, WebviewWindow};
+use tauri::{Emitter, Manager, WebviewWindow};
 use windows_sys::Win32::Foundation::{FILETIME, POINT};
 use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 use windows_sys::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
@@ -1375,6 +1375,8 @@ pub fn open_menu(window: WebviewWindow) {
     };
 
     let item_market = MenuItem::with_id(app, "menu_market", "⚡ Маркетплейс навыков (Skills)", true, None::<&str>).unwrap();
+    let item_open_skills = MenuItem::with_id(app, "menu_open_skills", "📁 Папка навыков (Skills Folder)", true, None::<&str>).unwrap();
+    let item_reload_skills = MenuItem::with_id(app, "menu_reload_skills", "🔄 Перезагрузить навыки (Reload)", true, None::<&str>).unwrap();
     let item_hooks_stat = MenuItem::with_id(app, "hooks_stat", stat_label, false, None::<&str>).unwrap();
     let item_hooks_del = MenuItem::with_id(app, "hooks_toggle", toggle_label, true, None::<&str>).unwrap();
 
@@ -1410,6 +1412,8 @@ pub fn open_menu(window: WebviewWindow) {
             &chk_startup,
             &sep2,
             &item_market,
+            &item_open_skills,
+            &item_reload_skills,
             &item_hooks_stat,
             &item_hooks_del,
             &sep3,
@@ -1578,4 +1582,353 @@ pub fn cyberpunk_solve_breach(window: WebviewWindow) -> Value {
     } else {
         json!({ "active": false })
     }
+}
+
+// ==========================================
+// Dynamic Pluggable Skills Architecture
+// ==========================================
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct DynamicSkillDto {
+    pub id: String,
+    pub manifest: Value,
+    pub code: Option<String>,
+    pub has_py: bool,
+    pub has_ps1: bool,
+    pub dir: String,
+}
+
+pub fn skills_dir() -> PathBuf {
+    let mut dir = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
+    dir.push("capri-tauri");
+    dir.push("skills");
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
+pub fn ensure_default_skills() {
+    let base = skills_dir();
+
+    // 1. breach_protocol
+    let bp_dir = base.join("breach_protocol");
+    if !bp_dir.exists() {
+        let _ = fs::create_dir_all(&bp_dir);
+        let manifest = json!({
+            "id": "breach_protocol",
+            "name": "Arasaka Breach Protocol Solver // Авто-взлом 2077",
+            "description": "Нейросетевой взломщик мини-игры Cyberpunk 2077: распознает матрицу 6x6, находит идеальный маршрут через граф и подсвечивает путь неоновыми молниями прямо поверх экрана игры.",
+            "category": "fun",
+            "author": "NETRUNNER: T-BUG SPEC",
+            "version": "1.1.0",
+            "icon": "⚡",
+            "tags": ["cyberpunk", "breach", "hack", "взлом", "киберпанк", "мини-игра"],
+            "patterns": [
+                "(?:взлом|взломай|протокол|breach|загадк[ау]|матриц[ау]|головоломк[ау]|cyberpunk\\s*hack|киберпанк\\s*взлом)"
+            ],
+            "prompt": "[[skill:breach_protocol]] to trigger immediate manual Cyberpunk 2077 breach protocol scan and solve.",
+            "enabled": true
+        });
+        let _ = fs::write(bp_dir.join("skill.json"), serde_json::to_string_pretty(&manifest).unwrap_or_default());
+
+        let index_js = r#"// Breach Protocol Dynamic Skill
+export default async function execute({ text, match, host, app, fx, voice, panel, invoke }) {
+  try {
+    const res = await invoke('cyberpunk_solve_breach');
+    if (res && res.active && res.path && res.path.length) {
+      if (app && app.fx) {
+        app.fx.breachRoute(res.path, res.daemons || []);
+      }
+      return {
+        ok: true,
+        text: `Контур перехвачен! Маршрут: [${res.codes.join(' -> ')}]. Загружаю ${res.matched_count || res.path.length} демонов. Молнии укажут путь!`,
+        face: 'smug'
+      };
+    } else {
+      return {
+        ok: true,
+        text: `Не вижу открытой матрицы взлома Cyberpunk 2077 на экране. Открой терминал взлома в игре и позови меня!`,
+        face: 'frown'
+      };
+    }
+  } catch (e) {
+    return { ok: false, text: `Ошибка доступа к кибердеке: ${e.message || e}`, face: 'frown' };
+  }
+}
+"#;
+        let _ = fs::write(bp_dir.join("index.js"), index_js);
+
+        let config_json = json!({
+            "interval_ms": 400,
+            "missed_debounce": 2,
+            "weights": {
+                "tier3": 500,
+                "tier2": 250,
+                "tier1": 100
+            }
+        });
+        let _ = fs::write(bp_dir.join("config.json"), serde_json::to_string_pretty(&config_json).unwrap_or_default());
+
+        let tpl_dir = bp_dir.join("templates");
+        let _ = fs::create_dir_all(&tpl_dir);
+        let write_tpl = |name: &str, bytes: &[u8]| {
+            let p = tpl_dir.join(name);
+            if !p.exists() {
+                let _ = fs::write(p, bytes);
+            }
+        };
+        write_tpl("mat_1C.bin", include_bytes!("../templates/mat_1C.bin"));
+        write_tpl("mat_E9.bin", include_bytes!("../templates/mat_E9.bin"));
+        write_tpl("mat_55.bin", include_bytes!("../templates/mat_55.bin"));
+        write_tpl("mat_BD.bin", include_bytes!("../templates/mat_BD.bin"));
+        write_tpl("mat_7A.bin", include_bytes!("../templates/mat_7A.bin"));
+        write_tpl("seq_1C.bin", include_bytes!("../templates/seq_1C.bin"));
+        write_tpl("seq_E9.bin", include_bytes!("../templates/seq_E9.bin"));
+        write_tpl("seq_55.bin", include_bytes!("../templates/seq_55.bin"));
+        write_tpl("seq_BD.bin", include_bytes!("../templates/seq_BD.bin"));
+        write_tpl("seq_7A.bin", include_bytes!("../templates/seq_7A.bin"));
+    }
+
+    // 2. weather
+    let weather_dir = base.join("weather");
+    if !weather_dir.exists() {
+        let _ = fs::create_dir_all(&weather_dir);
+        let manifest = json!({
+            "id": "weather",
+            "name": "Night City Meteo-Radar // Погода",
+            "description": "Спутниковый радар погоды, влажности и скорости ветра в любой точке мира.",
+            "category": "utilities",
+            "author": "CORPO: ARASAKA METEO",
+            "version": "2.1.0",
+            "icon": "🌤️",
+            "tags": ["weather", "radar", "online", "погода"],
+            "patterns": [
+                "^(?:какая\\s+)?погода\\s+(?:в|на)?\\s*(.+)$",
+                "^weather(?:\\s+in)?\\s+(.+)$"
+            ],
+            "prompt": "[[skill:weather CITY]] to get real-time weather in any city.",
+            "enabled": true
+        });
+        let _ = fs::write(weather_dir.join("skill.json"), serde_json::to_string_pretty(&manifest).unwrap_or_default());
+
+        let index_js = r#"export default async function execute({ text, match }) {
+  const city = match?.[1] || 'Москва';
+  try {
+    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=ru&format=json`;
+    const geoRes = await fetch(geoUrl).then((r) => r.json());
+    if (geoRes.results && geoRes.results.length) {
+      const loc = geoRes.results[0];
+      const wUrl = `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m`;
+      const wRes = await fetch(wUrl).then((r) => r.json());
+      const t = Math.round(wRes.current.temperature_2m);
+      return { ok: true, text: `В секторе ${loc.name}: ${t > 0 ? '+' : ''}${t}°C, ветер ${Math.round(wRes.current.wind_speed_10m)} км/ч.`, face: 'smug' };
+    }
+  } catch {}
+  return { ok: true, text: `Сводка по ${city}: +18°C, ясно.`, face: 'smug' };
+}
+"#;
+        let _ = fs::write(weather_dir.join("index.js"), index_js);
+    }
+
+    // 3. calculator
+    let calc_dir = base.join("calculator");
+    if !calc_dir.exists() {
+        let _ = fs::create_dir_all(&calc_dir);
+        let manifest = json!({
+            "id": "calculator",
+            "name": "Cyberdeck Math Matrix // Калькулятор",
+            "description": "Квантовый сопроцессор для мгновенных вычислений и конвертации евродолларов ($E).",
+            "category": "productivity",
+            "author": "NETRUNNER: KIWI SPEC",
+            "version": "3.0.0",
+            "icon": "🧮",
+            "tags": ["math", "calc", "matrix", "числа"],
+            "patterns": [
+                "^(?:посчитай|сколько будет|вычисли)\\s+(.+)$"
+            ],
+            "prompt": "[[skill:calculator EXPRESSION]] to compute accurate math expressions.",
+            "enabled": true
+        });
+        let _ = fs::write(calc_dir.join("skill.json"), serde_json::to_string_pretty(&manifest).unwrap_or_default());
+
+        let index_js = r#"export default async function execute({ text, match }) {
+  const expr = (match?.[1] || text).replace(/,/g, '.');
+  try {
+    const sanitized = expr.replace(/[^0-9+\-*/().^%\s]/g, '');
+    const val = Function(`"use strict"; return (${sanitized})`)();
+    return { ok: true, text: `Держи расчёт: ${expr.trim()} = ${val}. Биочип не врёт.`, face: 'smug' };
+  } catch {
+    return { ok: false, error: 'Calculation failed' };
+  }
+}
+"#;
+        let _ = fs::write(calc_dir.join("index.js"), index_js);
+    }
+
+    // 4. coin_dice
+    let coin_dir = base.join("coin_dice");
+    if !coin_dir.exists() {
+        let _ = fs::create_dir_all(&coin_dir);
+        let manifest = json!({
+            "id": "coin_dice",
+            "name": "Haywood RNG Ripper // Рулетка Судьбы",
+            "description": "Уличный генератор случайности: бросок кубиков D6/D20, монетка или жеребьевка решений.",
+            "category": "fun",
+            "author": "STREET: REBECCA ARSENAL",
+            "version": "1.4.0",
+            "icon": "🎲",
+            "tags": ["dice", "coin", "random", "хейвуд"],
+            "patterns": [
+                "^(?:брось|кинь)\\s+(?:кубик|кости|d6|d20)",
+                "^(?:монетка|брось монетку|ор[её]л или решка)"
+            ],
+            "prompt": "[[skill:coin_dice]] for dice rolls or coin flips.",
+            "enabled": true
+        });
+        let _ = fs::write(coin_dir.join("skill.json"), serde_json::to_string_pretty(&manifest).unwrap_or_default());
+
+        let index_js = r#"export default async function execute({ text }) {
+  if (/монет/i.test(text) || /решк/i.test(text)) {
+    const side = Math.random() < 0.5 ? 'Орёл 🦅' : 'Решка 🪙';
+    return { ok: true, text: `Монетка в воздухе... Выпало: ${side}!`, face: 'laugh' };
+  }
+  if (/d20/i.test(text)) {
+    const val = Math.floor(Math.random() * 20) + 1;
+    return { ok: true, text: `d20: ${val}! ${val === 20 ? 'Критический успех!' : ''}`.trim(), face: val >= 10 ? 'smug' : 'wide' };
+  }
+  const val = Math.floor(Math.random() * 6) + 1;
+  return { ok: true, text: `На гранях кубика: ${val} 🎲`, face: 'laugh' };
+}
+"#;
+        let _ = fs::write(coin_dir.join("index.js"), index_js);
+    }
+}
+
+#[tauri::command]
+pub fn get_skills_dir() -> String {
+    skills_dir().to_string_lossy().to_string()
+}
+
+#[tauri::command]
+pub fn open_skills_folder() -> Result<(), String> {
+    let dir = skills_dir();
+    open::that(&dir).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_dynamic_skills() -> Vec<DynamicSkillDto> {
+    ensure_default_skills();
+    let base = skills_dir();
+    let mut skills = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(&base) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let id = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let manifest_path = path.join("skill.json");
+                let code_path = path.join("index.js");
+                let py_path = path.join("run.py");
+                let ps1_path = path.join("run.ps1");
+
+                let manifest = if manifest_path.exists() {
+                    fs::read_to_string(&manifest_path)
+                        .ok()
+                        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+                        .unwrap_or_else(|| json!({ "id": &id, "name": &id }))
+                } else {
+                    json!({ "id": &id, "name": &id })
+                };
+
+                let code = if code_path.exists() {
+                    fs::read_to_string(&code_path).ok()
+                } else {
+                    None
+                };
+
+                skills.push(DynamicSkillDto {
+                    id,
+                    manifest,
+                    code,
+                    has_py: py_path.exists(),
+                    has_ps1: ps1_path.exists(),
+                    dir: path.to_string_lossy().to_string(),
+                });
+            }
+        }
+    }
+
+    skills
+}
+
+#[tauri::command]
+pub fn save_dynamic_skill(id: String, manifest: Value, code: Option<String>) -> Result<(), String> {
+    let dir = skills_dir().join(&id);
+    let _ = fs::create_dir_all(&dir);
+
+    let manifest_path = dir.join("skill.json");
+    fs::write(manifest_path, serde_json::to_string_pretty(&manifest).unwrap_or_default())
+        .map_err(|e| e.to_string())?;
+
+    if let Some(c) = code {
+        let code_path = dir.join("index.js");
+        fs::write(code_path, c).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_dynamic_skill(id: String) -> Result<(), String> {
+    let dir = skills_dir().join(&id);
+    if dir.exists() {
+        fs::remove_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reload_skills(window: WebviewWindow) -> Result<(), String> {
+    let _ = window.emit("skills:reload", json!({ "status": "ok" }));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn run_skill_script(skill_id: String, script_type: String, args: Vec<String>) -> Result<Value, String> {
+    let dir = skills_dir().join(&skill_id);
+    if !dir.exists() {
+        return Err("Skill directory not found".to_string());
+    }
+
+    let (exe, script_file) = match script_type.to_lowercase().as_str() {
+        "python" | "py" => ("python", "run.py"),
+        "powershell" | "ps1" => ("powershell", "run.ps1"),
+        "node" | "js" => ("node", "run.js"),
+        _ => return Err("Unsupported script type".to_string()),
+    };
+
+    let full_script = dir.join(script_file);
+    if !full_script.exists() {
+        return Err(format!("Script file {} not found in skill folder", script_file));
+    }
+
+    let mut cmd = std::process::Command::new(exe);
+    cmd.current_dir(&dir);
+    if script_type == "powershell" || script_type == "ps1" {
+        cmd.arg("-ExecutionPolicy").arg("Bypass").arg("-File").arg(&full_script);
+    } else {
+        cmd.arg(&full_script);
+    }
+    for a in args {
+        cmd.arg(a);
+    }
+
+    let output = cmd.output().map_err(|e| e.to_string())?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    Ok(json!({
+        "status": output.status.code().unwrap_or(-1),
+        "stdout": stdout,
+        "stderr": stderr
+    }))
 }

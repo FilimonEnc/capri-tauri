@@ -39,6 +39,13 @@ pub fn run() {
             commands::install_hooks,
             commands::uninstall_hooks,
             commands::cyberpunk_solve_breach,
+            commands::get_skills_dir,
+            commands::open_skills_folder,
+            commands::list_dynamic_skills,
+            commands::save_dynamic_skill,
+            commands::delete_dynamic_skill,
+            commands::reload_skills,
+            commands::run_skill_script,
         ])
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
@@ -47,6 +54,16 @@ pub fn run() {
             }
             if id == "menu_market" || id == "marketplace" {
                 let _ = open::that("http://127.0.0.1:47823/marketplace");
+                return;
+            }
+            if id == "menu_open_skills" || id == "open_skills" {
+                let _ = commands::open_skills_folder();
+                return;
+            }
+            if id == "menu_reload_skills" || id == "reload_skills" {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = commands::reload_skills(w);
+                }
                 return;
             }
             if id == "sound_folder" {
@@ -303,16 +320,30 @@ pub fn run() {
                 }
             }
 
+            // Ensure dynamic skills infrastructure and default templates
+            commands::ensure_default_skills();
+
             // System Tray Menu with official Capri icon
             let item_status = MenuItem::with_id(app, "tray_status", "● Капри онлайн (:47823)", false, None::<&str>)?;
             let item_chat = MenuItem::with_id(app, "chat", "💬 Поговорить с ней (Chat)", true, None::<&str>)?;
             let item_market = MenuItem::with_id(app, "marketplace", "⚡ Маркетплейс навыков (Skills)", true, None::<&str>)?;
+            let item_open_skills = MenuItem::with_id(app, "open_skills", "📁 Папка навыков (Skills Folder)", true, None::<&str>)?;
+            let item_reload_skills = MenuItem::with_id(app, "reload_skills", "🔄 Перезагрузить навыки (Reload)", true, None::<&str>)?;
             let item_quit = MenuItem::with_id(app, "quit", "❌ Выход / Quit", true, None::<&str>)?;
 
             let sep1 = PredefinedMenuItem::separator(app)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
 
-            let menu = Menu::with_items(app, &[&item_status, &sep1, &item_chat, &item_market, &sep2, &item_quit])?;
+            let menu = Menu::with_items(app, &[
+                &item_status,
+                &sep1,
+                &item_chat,
+                &item_market,
+                &item_open_skills,
+                &item_reload_skills,
+                &sep2,
+                &item_quit,
+            ])?;
 
             let app_icon = tauri::include_image!("icons/32x32.png");
 

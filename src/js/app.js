@@ -877,6 +877,32 @@ async function boot() {
       capri.perform('curious', capri.towardCenter());
     }
   }, 60000);
+
+  // Expose app instance to dynamic skills and tools
+  window.capriApp = {
+    capri,
+    fx,
+    panel,
+    voice,
+    brain,
+    pc,
+    chat,
+    setup,
+    custom,
+    bond,
+    jealousy,
+    reminders,
+    guide,
+    mission,
+  };
+
+  // Instant UI / Script Reload Hotkey (F5 or Ctrl+R)
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'F5' || (e.ctrlKey && e.key.toLowerCase() === 'r')) {
+      e.preventDefault();
+      window.location.reload();
+    }
+  });
 }
 
 boot().catch((err) => {
