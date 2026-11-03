@@ -1555,6 +1555,20 @@ pub fn uninstall_hooks() -> Result<bool, String> {
 
 #[tauri::command]
 pub fn cyberpunk_solve_breach(window: WebviewWindow) -> Value {
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::SetWindowPos(
+                hwnd.0 as windows_sys::Win32::Foundation::HWND,
+                windows_sys::Win32::UI::WindowsAndMessaging::HWND_TOPMOST,
+                0, 0, 0, 0,
+                windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOMOVE
+                    | windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOSIZE
+                    | windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOACTIVATE
+                    | windows_sys::Win32::UI::WindowsAndMessaging::SWP_ASYNCWINDOWPOS,
+            );
+        }
+    }
+
     let win_pos = window.inner_position().unwrap_or(tauri::PhysicalPosition { x: 0, y: 0 });
     let win_size = window.inner_size().unwrap_or(tauri::PhysicalSize { width: 2560, height: 1440 });
     let sf = window.scale_factor().unwrap_or(1.0);

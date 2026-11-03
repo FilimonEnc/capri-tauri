@@ -13,7 +13,8 @@ use windows_sys::Win32::Media::{timeBeginPeriod, timeEndPeriod};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetClassNameW, GetCursorPos, GetForegroundWindow, GetWindowLongW, IsIconic,
-    IsWindowVisible, IsZoomed, GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    IsWindowVisible, IsZoomed, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST, SWP_ASYNCWINDOWPOS,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
 struct EnumData {
@@ -181,6 +182,7 @@ impl WindowTracker {
 
             let mut last_breach_check = std::time::Instant::now();
             let mut breach_was_active = false;
+            let mut breach_missed_count: u32 = 0;
             let mut last_solution_codes: serde_json::Value = serde_json::Value::Null;
 
             while r.load(Ordering::Relaxed) {
@@ -193,7 +195,8 @@ impl WindowTracker {
                 let lbutton = unsafe { (GetAsyncKeyState(VK_LBUTTON as i32) as u16 & 0x8000) != 0 };
                 let rbutton = unsafe { (GetAsyncKeyState(VK_RBUTTON as i32) as u16 & 0x8000) != 0 };
 
-                let (win_x, win_y, win_w, win_h, sf, monitors) = if let Some(w) = app.get_webview_window("main") {
+                let (self_hwnd, win_x, win_y, win_w, win_h, sf, monitors) = if let Some(w) = app.get_webview_window("main") {
+                    let hwnd = w.hwnd().map(|h| h.0 as HWND).unwrap_or(std::ptr::null_mut());
                     let p = w.inner_position().unwrap_or(tauri::PhysicalPosition { x: 0, y: 0 });
                     let s = w.inner_size().unwrap_or(tauri::PhysicalSize {
                         width: 1920,
@@ -201,9 +204,9 @@ impl WindowTracker {
                     });
                     let sf = w.scale_factor().unwrap_or(1.0);
                     let mons = w.available_monitors().unwrap_or_default();
-                    (p.x, p.y, s.width as i32, s.height as i32, sf, mons)
+                    (hwnd, p.x, p.y, s.width as i32, s.height as i32, sf, mons)
                 } else {
-                    (0, 0, 1920, 1080, 1.0, Vec::new())
+                    (std::ptr::null_mut(), 0, 0, 1920, 1080, 1.0, Vec::new())
                 };
 
                 let display_idx = crate::commands::find_monitor_index(&monitors, current_pt);
@@ -289,21 +292,52 @@ impl WindowTracker {
                     let _ = app.emit("windows:update", snap);
                 }
 
-                // 3. Cyberpunk 2077 Breach Protocol background detection (~600ms)
+                // 3. Cyberpunk 2077 Breach Protocol background detection (~500ms)
                 let now_inst = std::time::Instant::now();
-                if now_inst.duration_since(last_breach_check) >= Duration::from_millis(600) {
+                if now_inst.duration_since(last_breach_check) >= Duration::from_millis(500) {
                     last_breach_check = now_inst;
                     if let Some(solution) = crate::cyberpunk::scan_and_solve_breach(win_x, win_y, win_w, win_h, sf) {
+                        breach_missed_count = 0;
                         let codes = solution["codes"].clone();
                         if !breach_was_active || codes != last_solution_codes {
                             last_solution_codes = codes;
                             breach_was_active = true;
                             let _ = app.emit("cyberpunk:breach_detected", solution);
                         }
+
+                        // Proactively enforce HWND_TOPMOST above full-screen DirectX 12 game
+                        if !self_hwnd.is_null() {
+                            unsafe {
+                                SetWindowPos(
+                                    self_hwnd,
+                                    HWND_TOPMOST,
+                                    0, 0, 0, 0,
+                                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
+                                );
+                            }
+                        }
                     } else if breach_was_active {
-                        breach_was_active = false;
-                        last_solution_codes = serde_json::Value::Null;
-                        let _ = app.emit("cyberpunk:breach_cleared", json!({ "cleared": true }));
+                        breach_missed_count += 1;
+
+                        // Keep Capri topmost during brief debounce window
+                        if !self_hwnd.is_null() {
+                            unsafe {
+                                SetWindowPos(
+                                    self_hwnd,
+                                    HWND_TOPMOST,
+                                    0, 0, 0, 0,
+                                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
+                                );
+                            }
+                        }
+
+                        // Only clear after ~2 seconds (4 missed checks) of consistently not seeing breach
+                        if breach_missed_count >= 4 {
+                            breach_was_active = false;
+                            breach_missed_count = 0;
+                            last_solution_codes = serde_json::Value::Null;
+                            let _ = app.emit("cyberpunk:breach_cleared", json!({ "cleared": true }));
+                        }
                     }
                 }
 
