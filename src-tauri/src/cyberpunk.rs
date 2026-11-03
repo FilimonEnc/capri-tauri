@@ -477,11 +477,9 @@ pub fn is_breach_matrix_visible(win_x: i32, win_y: i32, win_w: i32, win_h: i32) 
 
 fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64) -> Option<Value> {
     let buf = capture_screen(win_x, win_y, win_w, win_h)?;
-    let (hx1, hy1, hw, _hh) = detect_header(&buf, win_w, win_h)?;
+    let (hx1, hy1, _hw, _hh) = detect_header(&buf, win_w, win_h)?;
 
     let scale_x = win_w as f64 / 2560.0;
-    let norm_hw = hw as f64 / scale_x;
-    let n = if norm_hw < 980.0 { 5 } else if norm_hw > 1300.0 { 7 } else { 6 };
 
     let mat_1c = get_template_bytes("mat_1C.bin", MAT_1C);
     let mat_e9 = get_template_bytes("mat_E9.bin", MAT_E9);
@@ -515,16 +513,50 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
         normalize(&seq_ff),
     ];
 
-    // Centered grid coordinates
-    let mut row_ys = Vec::with_capacity(n);
-    let mut col_xs = Vec::with_capacity(n);
-    let half_n = (n as f64 - 1.0) / 2.0;
-    for i in 0..n {
-        let r_offset = ((i as f64 - half_n) * 85.5 * scale_x).round() as i32;
-        let c_offset = ((i as f64 - half_n) * 85.5 * scale_x).round() as i32;
-        row_ys.push(hy1 + (327.0 * scale_x).round() as i32 + r_offset);
-        col_xs.push(hx1 + (423.0 * scale_x).round() as i32 + c_offset);
-    }
+    // Standard grid coordinates relative to matrix header (hx1, hy1)
+    let row_ys = [
+        hy1 + (113.0 * scale_x).round() as i32,
+        hy1 + (199.0 * scale_x).round() as i32,
+        hy1 + (284.0 * scale_x).round() as i32,
+        hy1 + (370.0 * scale_x).round() as i32,
+        hy1 + (455.0 * scale_x).round() as i32,
+        hy1 + (541.0 * scale_x).round() as i32,
+    ];
+    let col_xs = [
+        hx1 + (210.0 * scale_x).round() as i32,
+        hx1 + (295.0 * scale_x).round() as i32,
+        hx1 + (380.0 * scale_x).round() as i32,
+        hx1 + (466.0 * scale_x).round() as i32,
+        hx1 + (551.0 * scale_x).round() as i32,
+        hx1 + (636.0 * scale_x).round() as i32,
+    ];
+
+    // Determine matrix size (5x5 vs 6x6) by checking if column 5 has an actual token
+    let has_col5 = {
+        let cy = row_ys[0];
+        let cx = col_xs[5];
+        let mut patch = Vec::with_capacity(48 * 40);
+        let mut sum = 0.0f32;
+        let mut sum_sq = 0.0f32;
+        for py in (cy - 20)..(cy + 20) {
+            for px in (cx - 24)..(cx + 24) {
+                let v = get_gray(&buf, win_w, win_h, px, py);
+                patch.push(v);
+                sum += v;
+                sum_sq += v * v;
+            }
+        }
+        let len = patch.len() as f32;
+        let mean = sum / len;
+        let std = (sum_sq / len - mean * mean + 1e-5).sqrt();
+        if std < 15.0 {
+            false
+        } else {
+            let (_, corr) = match_patch(&patch, &mat_tpls);
+            corr > 0.40
+        }
+    };
+    let n = if has_col5 { 6 } else { 5 };
 
     let mut matrix = vec![vec!["1C"; n]; n];
     let mut matrix_coords = vec![vec![(0i32, 0i32); n]; n];
