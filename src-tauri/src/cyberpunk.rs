@@ -116,21 +116,38 @@ fn detect_header(buf: &[u8], w: i32, h: i32) -> Option<(i32, i32, i32, i32)> {
         yellow_y_counts[yi] = count;
     }
 
-    let mut target_y1 = None;
-    let mut target_y2 = None;
+    let mut y_blocks: Vec<(i32, i32, i32)> = Vec::new();
+    let mut in_block = false;
+    let mut block_start = 0;
     for (i, &cnt) in yellow_y_counts.iter().enumerate() {
-        if cnt > 150 {
-            if target_y1.is_none() {
-                target_y1 = Some(y_start + i as i32);
-            }
-            target_y2 = Some(y_start + i as i32);
+        let y = y_start + i as i32;
+        if cnt > 150 && !in_block {
+            in_block = true;
+            block_start = y;
+        } else if cnt <= 150 && in_block {
+            in_block = false;
+            y_blocks.push((block_start, y, y - block_start));
         }
     }
+    if in_block {
+        y_blocks.push((block_start, y_end, y_end - block_start));
+    }
 
-    let (hy1, hy2) = match (target_y1, target_y2) {
-        (Some(y1), Some(y2)) if y2 - y1 >= 15 => (y1, y2),
-        _ => return None,
-    };
+    if y_blocks.is_empty() {
+        return None;
+    }
+
+    // Filter for the main matrix header block (typically 40-75px height; timer bar above is only ~10-15px)
+    let header_block = y_blocks
+        .iter()
+        .filter(|b| b.2 >= 20 && b.2 <= 90)
+        .max_by_key(|b| b.2)
+        .or_else(|| y_blocks.iter().max_by_key(|b| b.2))?;
+
+    let (hy1, hy2) = (header_block.0, header_block.1);
+    if hy2 - hy1 < 15 {
+        return None;
+    }
 
     let mut x_counts = vec![0i32; w as usize];
     for y in hy1..hy2 {
@@ -145,7 +162,7 @@ fn detect_header(buf: &[u8], w: i32, h: i32) -> Option<(i32, i32, i32, i32)> {
         }
     }
 
-    let threshold = ((hy2 - hy1) as f32 * 0.35) as i32;
+    let threshold = ((hy2 - hy1) as f32 * 0.25) as i32;
     let mut in_block = false;
     let mut start_x = 0;
     let mut best_block = None;
@@ -318,7 +335,7 @@ fn solve_matrix<'a>(
     (best_path, best_matched)
 }
 
-pub fn scan_and_solve_breach(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64) -> Option<Value> {
+fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64) -> Option<Value> {
     let buf = capture_screen(win_x, win_y, win_w, win_h)?;
     let (hx1, hy1, _hw, _hh) = detect_header(&buf, win_w, win_h)?;
 
@@ -373,10 +390,7 @@ pub fn scan_and_solve_breach(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf:
             }
             let (best_name, _) = match_patch(&patch, &mat_tpls);
             matrix[r][c] = best_name;
-            // Screen coordinates in CSS pixels
-            let css_x = ((win_x + cx) as f64 / sf).round() as i32;
-            let css_y = ((win_y + cy) as f64 / sf).round() as i32;
-            matrix_coords[r][c] = (css_x, css_y);
+            matrix_coords[r][c] = (cx, cy);
         }
     }
 
@@ -459,4 +473,16 @@ pub fn scan_and_solve_breach(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf:
         "daemons": matched_names,
         "matched_count": matched.len()
     }))
+}
+
+pub fn scan_and_solve_breach(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64) -> Option<Value> {
+    if let Some(res) = scan_breach_internal(win_x, win_y, win_w, win_h, sf) {
+        return Some(res);
+    }
+    if win_x != 0 || win_y != 0 {
+        if let Some(res) = scan_breach_internal(0, 0, 2560, 1440, sf) {
+            return Some(res);
+        }
+    }
+    None
 }
