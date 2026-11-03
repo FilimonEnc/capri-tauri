@@ -823,12 +823,13 @@ fn scan_breach_internal(win_x: i32, win_y: i32, win_w: i32, win_h: i32, sf: f64)
     });
 
     // Mascot position: floating gracefully in the open cyberspace corridor between Matrix & Daemons
+    // Centered cleanly in the gap to prevent any overlap with Matrix on left or Daemons on right
     let mascot_raw_x = if n == 6 {
-        hx1 + (825.0 * scale_x).round() as i32
+        hx1 + (910.0 * scale_x).round() as i32
     } else {
-        hx1 + (785.0 * scale_x).round() as i32
+        hx1 + (860.0 * scale_x).round() as i32
     };
-    let mascot_raw_y = hy1 + (30.0 * scale_x).round() as i32;
+    let mascot_raw_y = hy1 + (35.0 * scale_x).round() as i32;
 
     let mascot_x = if sf > 0.0 { (mascot_raw_x as f64 / sf).round() as i32 } else { mascot_raw_x };
     let mascot_y = if sf > 0.0 { (mascot_raw_y as f64 / sf).round() as i32 } else { mascot_raw_y };

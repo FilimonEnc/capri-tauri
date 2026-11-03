@@ -615,7 +615,7 @@ export class FxLayer {
       const first = nodes[0];
       const mascotW = 105;
       const mascotH = 166;
-      const posX = meta.mascot_x || (meta.seq_header_x ? meta.seq_header_x - 225 : first.x + 550);
+      const posX = meta.mascot_x || (meta.seq_header_x ? meta.seq_header_x - 170 : first.x + 580);
       const posY = meta.mascot_y || Math.max(60, first.y - 85);
 
       const left = posX - Math.round(mascotW / 2);
@@ -1824,7 +1824,7 @@ export class FxLayer {
         const first = nodes[0];
         const meta = it.meta || {};
         const mascotW = 105;
-        const posX = meta.mascot_x || (meta.seq_header_x ? meta.seq_header_x - 225 : first.x + 550);
+        const posX = meta.mascot_x || (meta.seq_header_x ? meta.seq_header_x - 170 : first.x + 580);
         const posY = meta.mascot_y || Math.max(60, first.y - 85);
 
         // -------------------------------------------------------------
@@ -1984,7 +1984,7 @@ export class FxLayer {
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 6]);
         ctx.beginPath();
-        ctx.arc(haloX, haloY, 66, haloAngle, haloAngle + Math.PI * 2);
+        ctx.arc(haloX, haloY, 54, haloAngle, haloAngle + Math.PI * 2);
         ctx.stroke();
 
         // Inner segmented yellow arc
@@ -1992,23 +1992,21 @@ export class FxLayer {
         ctx.lineWidth = 2.0;
         ctx.setLineDash([16, 12]);
         ctx.beginPath();
-        ctx.arc(haloX, haloY, 50, -haloAngle * 1.5, -haloAngle * 1.5 + Math.PI * 1.4);
+        ctx.arc(haloX, haloY, 40, -haloAngle * 1.5, -haloAngle * 1.5 + Math.PI * 1.4);
         ctx.stroke();
 
         ctx.setLineDash([]);
         ctx.restore();
 
-        // Floating Netrunner telemetry readout beside Capri
+        // Floating Netrunner telemetry readout below Capri's feet (stays safely inside corridor)
         ctx.save();
-        ctx.font = '9px "Consolas", monospace';
-        ctx.fillStyle = 'rgba(0, 240, 255, 0.75)';
-        ctx.textAlign = 'left';
-        const tx = posX + 58;
-        const ty = posY + 32;
-        ctx.fillText('┌ NET: CAPRI_v0.5', tx, ty);
-        ctx.fillText('├ ICE: OVERRIDDEN', tx, ty + 12);
-        ctx.fillText('├ LINK: ACTIVE [100%]', tx, ty + 24);
-        ctx.fillText(isAllDone ? '└ STATUS: INFILTRATED' : '└ INJECTING DAEMONS...', tx, ty + 36);
+        ctx.font = 'bold 9px "Consolas", monospace';
+        ctx.textAlign = 'center';
+        const ty = posY + mascotH + 12;
+        ctx.fillStyle = 'rgba(0, 240, 255, 0.85)';
+        ctx.fillText('NET: CAPRI_v0.5 // ICE: OVERRIDDEN', posX, ty);
+        ctx.fillStyle = isAllDone ? '#00ff88' : 'rgba(233, 255, 0, 0.85)';
+        ctx.fillText(isAllDone ? 'STATUS: INFILTRATED [✓]' : 'LINK: 100% // INJECTING DAEMONS...', posX, ty + 13);
         ctx.restore();
 
         // Holographic label directly above Capri
@@ -2309,19 +2307,47 @@ export class FxLayer {
         // -------------------------------------------------------------
         if (elapsed >= totalRevealTime) {
           const bannerAlpha = Math.min(1.0, (elapsed - totalRevealTime) / 250);
-          const bannerX = Math.max(300, Math.min(window.innerWidth - 300, first.x));
-          const bannerY = Math.max(80, first.y - 140);
 
           ctx.save();
+          // Dynamic width calculation so route text never overflows the box
+          ctx.font = 'bold 13px "Consolas", monospace';
+          const routeStr = nodes.map((n, idx) => `[${idx+1}] ${n.code}`).join(' ➔ ');
+          const routeW = ctx.measureText(routeStr).width;
+          const victoryStr = '✓ ALL TARGET DAEMONS INJECTED INTO CYBERSPACE';
+          const headerW = Math.max(
+            ctx.measureText('⚡ NETRUNNER ICE-BREAKER // PROTOCOL SOLVED').width,
+            ctx.measureText('⚡ SYSTEM FULLY OVERRIDDEN // ALL ICE CLEARED ⚡').width,
+            ctx.measureText(victoryStr).width
+          );
+          const maxTextW = Math.max(routeW, headerW);
+          const bw = Math.max(440, Math.round(maxTextW + 56));
+          const bh = 54;
+
+          const centerX = meta.matrix_box ? (meta.matrix_box.x + meta.matrix_box.w / 2) : (first.x + 150);
+          const bannerX = Math.max(bw / 2 + 25, Math.min(window.innerWidth - bw / 2 - 25, centerX));
+          const bannerY = Math.max(80, (meta.matrix_box ? meta.matrix_box.y : first.y) - 60);
+
           ctx.globalAlpha = bannerAlpha;
-          ctx.fillStyle = 'rgba(20, 16, 28, 0.90)';
+          ctx.fillStyle = 'rgba(20, 16, 28, 0.92)';
           ctx.strokeStyle = isAllDone ? '#00ff88' : '#00f0ff';
           ctx.lineWidth = 1.5;
 
-          const bw = 400;
-          const bh = 52;
           ctx.fillRect(bannerX - bw / 2, bannerY - bh / 2, bw, bh);
           ctx.strokeRect(bannerX - bw / 2, bannerY - bh / 2, bw, bh);
+
+          // High-tech corner ticks
+          ctx.strokeStyle = isAllDone ? '#00ff88' : '#e9ff00';
+          ctx.lineWidth = 2.0;
+          const cLen = 8;
+          ctx.beginPath();
+          ctx.moveTo(bannerX - bw / 2, bannerY - bh / 2 + cLen);
+          ctx.lineTo(bannerX - bw / 2, bannerY - bh / 2);
+          ctx.lineTo(bannerX - bw / 2 + cLen, bannerY - bh / 2);
+
+          ctx.moveTo(bannerX + bw / 2 - cLen, bannerY + bh / 2);
+          ctx.lineTo(bannerX + bw / 2, bannerY + bh / 2);
+          ctx.lineTo(bannerX + bw / 2, bannerY + bh / 2 - cLen);
+          ctx.stroke();
 
           if (isAllDone) {
             ctx.font = 'bold 11px "Consolas", monospace';
@@ -2332,7 +2358,7 @@ export class FxLayer {
 
             ctx.font = 'bold 12px "Consolas", monospace';
             ctx.fillStyle = '#ffffff';
-            ctx.fillText('✓ ALL TARGET DAEMONS INJECTED INTO CYBERSPACE', bannerX, bannerY + 11);
+            ctx.fillText(victoryStr, bannerX, bannerY + 11);
           } else {
             ctx.font = 'bold 11px "Consolas", monospace';
             ctx.fillStyle = '#e9ff00';
@@ -2340,8 +2366,6 @@ export class FxLayer {
             ctx.textBaseline = 'middle';
             ctx.fillText('⚡ NETRUNNER ICE-BREAKER // PROTOCOL SOLVED', bannerX, bannerY - 11);
 
-            // Route sequence
-            const routeStr = nodes.map((n, idx) => `[${idx+1}] ${n.code}`).join(' ➔ ');
             ctx.font = 'bold 13px "Consolas", monospace';
             ctx.fillStyle = '#00f0ff';
             ctx.fillText(routeStr, bannerX, bannerY + 10);
