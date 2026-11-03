@@ -503,6 +503,7 @@ async function boot() {
 
   // what's in here, for --dev scripts (debug route `eval`)
   window.dev = { capri, brain, panel, chat, guide, fx, voice, bond, jealousy, reminders, look, pc, setup, screens: () => screens };
+  window.capriApp = window.dev;
 
   host.onClaudeEvent((evt) => brain.handle(evt));
   host.onWindows((data) => {
@@ -510,6 +511,25 @@ async function boot() {
     brain.onWindows(data);
     jealousy.onWindows(data);
     pc.onWindows(data);
+  });
+
+  // Cyberpunk 2077 Breach Protocol detection & lightning overlay
+  host.onCyberpunkBreach?.((data) => {
+    if (data && data.path && data.path.length) {
+      fx.breachRoute(data.path, data.daemons || []);
+      const count = data.matched_count || data.path.length;
+      panel.say({
+        kind: 'info',
+        face: 'smug',
+        line: `Взлом протокола обнаружен! Маршрут на ${count} демонов: [${data.codes.join(' -> ')}]. Следуй по молниям!`,
+        hold: 4500,
+      });
+      voice.play('star');
+    }
+  });
+
+  host.onCyberpunkCleared?.(() => {
+    fx.clearBreachRoute();
   });
   // the windows as they are now: the watcher only speaks again when something changes
   host.windowsNow().then((data) => data && capri.setWindows(data));

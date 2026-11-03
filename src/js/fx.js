@@ -594,6 +594,28 @@ export class FxLayer {
     this.add({ type: 'jolt', life: FRAME_MS * 9, rect, covers, power });
   }
 
+  // Cyberpunk 2077 Breach Protocol Overlay:
+  // Draws electric lightning lines across the matrix connecting optimal solution nodes.
+  breachRoute(nodes, daemons = []) {
+    this.clearBreachRoute();
+    const item = this.add({
+      type: 'breach_route',
+      life: 600000,
+      nodes,
+      daemons,
+      born: performance.now(),
+    });
+    this._activeBreach = item;
+    return item;
+  }
+
+  clearBreachRoute() {
+    if (this._activeBreach) {
+      this._activeBreach.dead = true;
+      this._activeBreach = null;
+    }
+  }
+
   // ---------- cut-ins ----------
 
   // Anime cut-in: a slanted band with a close-up of her (a real frame from the show),
@@ -1695,6 +1717,143 @@ export class FxLayer {
           this.stroke(fork, COLORS.red, Math.max(1, it.width * 0.6));
           this.stroke(fork, COLORS.paper, 0.8);
         }
+        ctx.restore();
+        break;
+      }
+      case 'breach_route': {
+        const frame = Math.floor((now - it.born) / FRAME_MS);
+        const nodes = it.nodes;
+        if (!nodes || nodes.length === 0) break;
+
+        ctx.save();
+        ctx.lineJoin = 'miter';
+
+        // 1. Draw lightning bolts between consecutive nodes
+        for (let i = 0; i < nodes.length - 1; i++) {
+          const from = nodes[i];
+          const to = nodes[i + 1];
+          const len = Math.hypot(to.x - from.x, to.y - from.y);
+          if (len < 5) continue;
+
+          // Electric jagged lightning path
+          const pts = this.jag(from, to, Math.min(18, Math.max(7, len * 0.05)), true);
+
+          // Multi-layer neon cyberpunk stroke:
+          // Layer 1: Electric Cyan outer aura
+          this.stroke(pts, '#00f0ff', 6, -1, 1);
+          // Layer 2: Neon Yellow cyber energy
+          this.stroke(pts, '#e9ff00', 3.5);
+          // Layer 3: Hot white lightning core
+          this.stroke(pts, '#ffffff', 1.5);
+
+          // Electric branching forks
+          if (frame % 2 === 0) {
+            const [fx, fy] = pts[1 + Math.floor(rand(0, pts.length - 2))];
+            const a = Math.atan2(to.y - from.y, to.x - from.x) + rand(-1.2, 1.2);
+            const l = rand(15, 40);
+            const fork = this.jag({ x: fx, y: fy }, { x: fx + Math.cos(a) * l, y: fy + Math.sin(a) * l }, 6);
+            this.stroke(fork, '#00f0ff', 2.5);
+            this.stroke(fork, '#ffffff', 0.8);
+          }
+
+          // Traveling energy pulse along the wire
+          const travelT = ((now - it.born) * 0.0018 + i * 0.3) % 1;
+          const pulsePt = this.along(pts, travelT);
+          this.sparkle(pulsePt.x, pulsePt.y, 10, '#ffffff', '#00f0ff');
+        }
+
+        // 2. Draw HUD reticles and Step badges at each node
+        for (let i = 0; i < nodes.length; i++) {
+          const node = nodes[i];
+          const isStart = i === 0;
+          const isEnd = i === nodes.length - 1;
+
+          // Pulsing radius
+          const pulse = (Math.sin(now * 0.008 + i) + 1) * 0.5; // 0..1
+          const boxW = 54 + pulse * 4;
+          const boxH = 40 + pulse * 2;
+
+          // Corner brackets
+          const color = isStart ? '#e9ff00' : (isEnd ? '#ff2152' : '#00f0ff');
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2.5;
+
+          const hw = boxW / 2;
+          const hh = boxH / 2;
+          const blen = 12;
+
+          // Top-left
+          ctx.beginPath();
+          ctx.moveTo(node.x - hw, node.y - hh + blen);
+          ctx.lineTo(node.x - hw, node.y - hh);
+          ctx.lineTo(node.x - hw + blen, node.y - hh);
+          // Top-right
+          ctx.moveTo(node.x + hw - blen, node.y - hh);
+          ctx.lineTo(node.x + hw, node.y - hh);
+          ctx.lineTo(node.x + hw, node.y - hh + blen);
+          // Bottom-left
+          ctx.moveTo(node.x - hw, node.y + hh - blen);
+          ctx.lineTo(node.x - hw, node.y + hh);
+          ctx.lineTo(node.x - hw + blen, node.y + hh);
+          // Bottom-right
+          ctx.moveTo(node.x + hw - blen, node.y + hh);
+          ctx.lineTo(node.x + hw, node.y + hh);
+          ctx.lineTo(node.x + hw, node.y + hh - blen);
+          ctx.stroke();
+
+          // Step badge: floating circle or diamond above the cell
+          const badgeY = node.y - hh - 12;
+          ctx.fillStyle = '#14101c';
+          ctx.beginPath();
+          ctx.arc(node.x, badgeY, 11, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          // Step number text
+          ctx.font = 'bold 12px "Consolas", monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = color;
+          ctx.fillText(String(node.step || (i + 1)), node.x, badgeY + 1);
+
+          // If start node: banner tag
+          if (isStart) {
+            ctx.font = 'bold 10px "Consolas", monospace';
+            ctx.fillStyle = '#e9ff00';
+            ctx.fillText('⚡ START', node.x, badgeY - 14);
+          }
+        }
+
+        // 3. Cyberpunk HUD Top Banner
+        const first = nodes[0];
+        const bannerX = Math.max(300, Math.min(window.innerWidth - 300, first.x));
+        const bannerY = Math.max(80, first.y - 140);
+
+        ctx.fillStyle = 'rgba(20, 16, 28, 0.88)';
+        ctx.strokeStyle = '#00f0ff';
+        ctx.lineWidth = 1.5;
+
+        const bw = 380;
+        const bh = 50;
+        ctx.fillRect(bannerX - bw / 2, bannerY - bh / 2, bw, bh);
+        ctx.strokeRect(bannerX - bw / 2, bannerY - bh / 2, bw, bh);
+
+        // Header text
+        ctx.font = 'bold 11px "Consolas", monospace';
+        ctx.fillStyle = '#e9ff00';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⚡ NETRUNNER ICE-BREAKER // PROTOCOL SOLVED', bannerX, bannerY - 11);
+
+        // Route sequence
+        const routeStr = nodes.map((n, idx) => `[${idx+1}] ${n.code}`).join(' ➔ ');
+        ctx.font = 'bold 13px "Consolas", monospace';
+        ctx.fillStyle = '#00f0ff';
+        ctx.fillText(routeStr, bannerX, bannerY + 10);
+
         ctx.restore();
         break;
       }

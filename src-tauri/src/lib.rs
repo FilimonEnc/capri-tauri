@@ -1,5 +1,6 @@
 mod bridge_server;
 mod commands;
+mod cyberpunk;
 mod window_tracker;
 
 use serde_json::json;
@@ -37,6 +38,7 @@ pub fn run() {
             commands::get_hooks_status,
             commands::install_hooks,
             commands::uninstall_hooks,
+            commands::cyberpunk_solve_breach,
         ])
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();

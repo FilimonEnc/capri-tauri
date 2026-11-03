@@ -179,6 +179,10 @@ impl WindowTracker {
             let mut fast_until = std::time::Instant::now();
             let fast_duration = Duration::from_millis(350);
 
+            let mut last_breach_check = std::time::Instant::now();
+            let mut breach_was_active = false;
+            let mut last_solution_codes: serde_json::Value = serde_json::Value::Null;
+
             while r.load(Ordering::Relaxed) {
                 // 1. Cursor position tracking in exact CSS pixels
                 let mut current_pt = POINT { x: 0, y: 0 };
@@ -283,6 +287,24 @@ impl WindowTracker {
                     last_windows_snap = snap_str;
                     fast_until = std::time::Instant::now() + fast_duration;
                     let _ = app.emit("windows:update", snap);
+                }
+
+                // 3. Cyberpunk 2077 Breach Protocol background detection (~600ms)
+                let now_inst = std::time::Instant::now();
+                if now_inst.duration_since(last_breach_check) >= Duration::from_millis(600) {
+                    last_breach_check = now_inst;
+                    if let Some(solution) = crate::cyberpunk::scan_and_solve_breach(win_x, win_y, win_w, win_h, sf) {
+                        let codes = solution["codes"].clone();
+                        if !breach_was_active || codes != last_solution_codes {
+                            last_solution_codes = codes;
+                            breach_was_active = true;
+                            let _ = app.emit("cyberpunk:breach_detected", solution);
+                        }
+                    } else if breach_was_active {
+                        breach_was_active = false;
+                        last_solution_codes = serde_json::Value::Null;
+                        let _ = app.emit("cyberpunk:breach_cleared", json!({ "cleared": true }));
+                    }
                 }
 
                 if in_motion {

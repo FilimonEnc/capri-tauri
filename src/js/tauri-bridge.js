@@ -214,6 +214,11 @@ window.host = {
   webSearch: (query) => invoke('open_site', { url: `https://www.google.com/search?q=${encodeURIComponent(query)}` }),
   openSite: (address) => invoke('open_site', { url: address }),
 
+  // Cyberpunk 2077 Breach Protocol Solver
+  cyberpunkSolve: () => invoke('cyberpunk_solve_breach'),
+  onCyberpunkBreach: on('cyberpunk:breach_detected'),
+  onCyberpunkCleared: on('cyberpunk:breach_cleared'),
+
   // Skills Marketplace Engine
   openMarketplace: () => invoke('open_marketplace'),
   skillsList: () => fetch('http://127.0.0.1:47823/api/skills').then((r) => r.json()).catch(() => []),
@@ -244,6 +249,9 @@ window.host = {
 
   skillsMatch: async (text) => {
     const clean = String(text || '').trim();
+    if (/(?:взлом|взломай|протокол|breach|загадк[ау]|матриц[ау]|головоломк[ау]|cyberpunk\s*hack|киберпанк\s*взлом)/i.test(clean)) {
+      return { id: 'breach_protocol', match: [clean] };
+    }
     if (/^(?:какая\s+)?погода\s+(?:в|на)?\s*(.+)$/i.test(clean) || /^weather(?:\s+in)?\s+(.+)$/i.test(clean)) {
       const match = clean.match(/^(?:какая\s+)?погода\s+(?:в|на)?\s*(.+)$/i) || clean.match(/^weather(?:\s+in)?\s+(.+)$/i);
       return { id: 'weather', match: Array.from(match) };
@@ -271,6 +279,30 @@ window.host = {
   },
 
   skillsRun: async (id, { text, match }) => {
+    if (id === 'breach_protocol') {
+      try {
+        const res = await invoke('cyberpunk_solve_breach');
+        if (res && res.active && res.path && res.path.length) {
+          if (window.capriApp && window.capriApp.fx) {
+            window.capriApp.fx.breachRoute(res.path, res.daemons || []);
+          }
+          return {
+            ok: true,
+            text: `Контур перехвачен! Маршрут: [${res.codes.join(' -> ')}]. Загружаю ${res.matched_count || res.path.length} демонов. Молнии укажут путь!`,
+            face: 'smug'
+          };
+        } else {
+          return {
+            ok: true,
+            text: `Не вижу открытой матрицы взлома Cyberpunk 2077 на экране. Открой терминал взлома в игре и позови меня!`,
+            face: 'frown'
+          };
+        }
+      } catch (e) {
+        return { ok: false, text: `Ошибка доступа к кибердеке: ${e.message || e}`, face: 'frown' };
+      }
+    }
+
     if (id === 'weather') {
       const city = match?.[1] || 'Москва';
       try {

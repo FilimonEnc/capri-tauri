@@ -279,6 +279,18 @@ impl BridgeServer {
 pub fn get_default_skills() -> Value {
     json!([
         {
+            "id": "breach_protocol",
+            "name": "Arasaka Breach Protocol Solver // Авто-взлом 2077",
+            "description": "Нейросетевой взломщик мини-игры Cyberpunk 2077: распознает матрицу 6x6, находит идеальный маршрут через граф и подсвечивает путь неоновыми молниями прямо поверх экрана игры.",
+            "category": "fun",
+            "author": "NETRUNNER: T-BUG SPEC",
+            "version": "1.0.0",
+            "icon": "⚡",
+            "tags": ["cyberpunk", "breach", "hack", "взлом", "киберпанк", "мини-игра"],
+            "installed": true,
+            "enabled": true
+        },
+        {
             "id": "weather",
             "name": "Night City Meteo-Radar // Погода",
             "description": "Спутниковый радар погоды, влажности и скорости ветра в любой точке мира.",

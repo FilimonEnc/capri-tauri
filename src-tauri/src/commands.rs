@@ -1552,3 +1552,16 @@ pub fn uninstall_hooks() -> Result<bool, String> {
     uninstall_antigravity_hooks()?;
     Ok(true)
 }
+
+#[tauri::command]
+pub fn cyberpunk_solve_breach(window: WebviewWindow) -> Value {
+    let win_pos = window.inner_position().unwrap_or(tauri::PhysicalPosition { x: 0, y: 0 });
+    let win_size = window.inner_size().unwrap_or(tauri::PhysicalSize { width: 2560, height: 1440 });
+    let sf = window.scale_factor().unwrap_or(1.0);
+
+    if let Some(res) = crate::cyberpunk::scan_and_solve_breach(win_pos.x, win_pos.y, win_size.width as i32, win_size.height as i32, sf) {
+        res
+    } else {
+        json!({ "active": false })
+    }
+}
