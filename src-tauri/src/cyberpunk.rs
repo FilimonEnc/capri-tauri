@@ -142,10 +142,10 @@ fn detect_buffer_size(buf: &[u8], win_w: i32, win_h: i32) -> usize {
     let scale_x = win_w as f64 / 2560.0;
     let scale_y = win_h as f64 / 1440.0;
 
-    let search_x1 = (1150.0 * scale_x) as i32;
-    let search_x2 = (1900.0 * scale_x).min(win_w as f64) as i32;
-    let search_y1 = (200.0 * scale_y) as i32;
-    let search_y2 = (360.0 * scale_y).min(win_h as f64) as i32;
+    let search_x1 = (1100.0 * scale_x) as i32;
+    let search_x2 = (1950.0 * scale_x).min(win_w as f64) as i32;
+    let search_y1 = (90.0 * scale_y) as i32;
+    let search_y2 = (280.0 * scale_y).min(win_h as f64) as i32;
 
     let mut best_width = 0;
     for y in search_y1..search_y2 {
@@ -178,7 +178,7 @@ fn detect_buffer_size(buf: &[u8], win_w: i32, win_h: i32) -> usize {
         }
     }
 
-    6 // default fallback for modern cyberdecks
+    8 // default fallback for modern cyberdecks (up to 8 slots)
 }
 
 fn detect_header(buf: &[u8], w: i32, h: i32) -> Option<(i32, i32, i32, i32)> {
@@ -319,6 +319,9 @@ fn evaluate_path<'a>(codes: &[&'a str], sequences: &[Vec<&'a str>]) -> Vec<usize
 
 fn score_matched(matched: &[usize], w3: i32, w2: i32, w1: i32) -> i32 {
     let mut score = matched.len() as i32 * 1000;
+    if matched.contains(&3) {
+        score += w3 + 100; // Tier 4 daemon
+    }
     if matched.contains(&2) {
         score += w3;
     }
